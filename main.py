@@ -14,6 +14,8 @@ from corepy.arch.x86_64.lib.memory import MemRef
 import corepy.lib.extarray as extarray
 import corepy.arch.x86_64.lib.util as util
 
+import cdict
+
 # main_wrapper
     # normal calling convention
     # calls as of yet unmade main func
@@ -34,7 +36,7 @@ import corepy.arch.x86_64.lib.util as util
 # call X - 10 bytes
 
 # restrictions
-# rax used to get address from compile, so lost when an uncompiled block is called/jumped to
+# rax used to jump from compile, so lost when an uncompiled block is called/jumped to
 # everything else is free for all :D
 
 
@@ -120,6 +122,24 @@ def compile(redir_id):
 compile_cfunc = ctypes.CFUNCTYPE(ctypes.c_uint64, ctypes.c_uint64)(compile)
 compile_addr = ctypes.cast(compile_cfunc, ctypes.c_void_p).value
 
+class Block(object):
+    def __init__(self, ref):
+        self.compiled = False
+    def compile(self):
+        assert not self.compiled
+        self.compiled = True
+        self.program = compile(ref)
+        for type, redir in self.redirs:
+            maker = get_jmp if type == 'jmp' else get_call
+            redir.replace_callee(type(
+        return self.render_code.
+    def add_jmp(self, code):
+        redir = Redirection(code, self.compile)
+        self.redirs.append((get_jmp, redir))
+    def add_call(self, code):
+        redir = Redirection(code, self.compile)
+        self.redirs.append((get_call, redir))
+blocks = cdict.cdict(Block)
 
 redir_id_generator = itertools.count()
 
@@ -166,7 +186,7 @@ redirs_to_free = [] # used because a redir's program is used when python returns
 def caller():
     program = platform.Program()
     code = program.get_stream()
-    Redirection(code, compile_main)
+    blocks[tree].add_call(code)
     program.add(code)
     program.cache_code()
     return program
