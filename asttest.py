@@ -2,6 +2,14 @@ import ast
 
 import greenlet
 
+
+import corepy.arch.x86_64.isa as isa
+import corepy.arch.x86_64.types.registers as registers
+import corepy.arch.x86_64.platform as platform
+from corepy.arch.x86_64.lib.memory import MemRef
+import corepy.lib.extarray as extarray
+import corepy.arch.x86_64.lib.util as util
+
 def dump(node, annotate_fields=True, include_attributes=False):
     """
     Return a formatted dump of the tree in *node*.  This is mainly useful for
@@ -50,20 +58,20 @@ class EndBlock(Exception): pass
 
 refs = {}
 
-def compile(t, res, on_true=None):
+def compile(t, res, locs, on_true=None):
     if isinstance(t, ast.Module):
         for x in t.body:
-            res = compile(x, res)
-        res.append("ret")
+            res = compile(x, res, locs)
+        res.add(isa.ret())
     elif isinstance(t, ast.Assign):
-        res = compile(t.value, res)
+        res = compile(t.value, res, locs)
         assert len(t.targets) == 1
         target = t.targets[0]
         assert isinstance(target, ast.Name)
         assert isinstance(target.ctx, ast.Store)
-        res.append("pop %s" % target.id)
+        res.add("pop %s" % target.id)
     elif isinstance(t, ast.Num):
-        res.append("push %i" % t.n)
+        res.add(isa.push(t.n))
     elif isinstance(t, ast.While):
         def make_b():
             res = []
@@ -82,13 +90,10 @@ def compile(t, res, on_true=None):
         g = greenlet.getcurrent()
         g.parent.switch()
         res = []
-        print "BACK"
     elif isinstance(t, ast.Compare):
-        res.append("COMPARE, IF YES %r" % (on_true,))
-        #for x in t:
-        #    compile(x, res)
+        res.add("COMPARE, IF YES %r" % (on_true,))
     elif isinstance(t, ast.Print):
-        res.append("call print %s" % t.values)
+        res.add("call print %s" % t.values)
     else:
         print t
     return res
@@ -107,7 +112,7 @@ def compile_wrap(t, on_true=None):
     res = []
     g.switch(t, res, on_true)
     return res
-
+'''
 res = compile_wrap(tree)
 print res
 make_a = res[2][1]
@@ -118,3 +123,15 @@ make_c = res2[1][1]
 print make_c
 res3 = make_c()
 print res3
+'''
+def do_it(tree):
+    program = platform.Program()
+    locs = {}
+    code = program.get_stream()
+    compile(tree, code, locs)
+    program.add(code)
+    program.cache_code()
+    return program
+
+r = do_it(tree)
+print r
