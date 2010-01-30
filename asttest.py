@@ -1,5 +1,7 @@
 import ast
 
+import greenlet
+
 def dump(node, annotate_fields=True, include_attributes=False):
     """
     Return a formatted dump of the tree in *node*.  This is mainly useful for
@@ -43,16 +45,18 @@ print dump(tree)
 
 class EndBlock(Exception): pass
 
-class AstTraverser(object):
-    def __init__(self, 
+#class AstTraverser(object):
+#    def __init__(self, 
 
-res = []
-def compile(t):
+refs = {}
+
+def compile(t, res, on_true=None):
     if isinstance(t, ast.Module):
         for x in t.body:
-            compile(x)
+            res = compile(x, res)
+        res.append("ret")
     elif isinstance(t, ast.Assign):
-        compile(t.value)
+        res = compile(t.value, res)
         assert len(t.targets) == 1
         target = t.targets[0]
         assert isinstance(target, ast.Name)
@@ -61,40 +65,56 @@ def compile(t):
     elif isinstance(t, ast.Num):
         res.append("push %i" % t.n)
     elif isinstance(t, ast.While):
-        #add_jump(t)
         def make_b():
+            res = []
             for x in t.body:
-                compile(x)
-            res.append("jmp %s" % make_a)
+                res.extend(compile_wrap(x))
+            res.append(("jmp", make_a))
+            return res
         def make_c():
-            # continue from raise EndBlock
-            pass
+            return g.switch()
         def make_a():
-            compile_wrap(t.test, on_true="jmp %s" % make_b)
-            res.append("jmp %s" % make_c)
-        res.append("jmp %s" % make_a)
-        # save state here or something ..
-        raise EndBlock
-    elif isinstance(t, Compare):
-        for x in t:
-            compile(x)
+            res = compile_wrap(t.test, on_true=("jmp", make_b))
+            res.append(("jmp", make_c))
+            return res
+        res.append(("jmp", make_a))
+        # MAGIC
+        g = greenlet.getcurrent()
+        g.parent.switch()
+        res = []
+        print "BACK"
+    elif isinstance(t, ast.Compare):
+        res.append("COMPARE, IF YES %r" % (on_true,))
+        #for x in t:
+        #    compile(x, res)
+    elif isinstance(t, ast.Print):
+        res.append("call print %s" % t.values)
     else:
         print t
+    return res
 
-def compile2(a):
-    def push_ast(a):
-        t.append((a, 0))
-    t = []
-    push_ast(a)
-    while t:
-        a = t.pop()
-        if 
+#def compile2(a):
+#    def push_ast(a):
+#        t.append((a, 0))
+#    t = []
+#    push_ast(a)
+#    while t:
+#        a = t.pop()
+#        if 
 
-def compile_wrap(t):
-    try:
-        compile(t)
-    except EndBlock:
-        pass
+def compile_wrap(t, on_true=None):
+    g = greenlet.greenlet(compile)
+    res = []
+    g.switch(t, res, on_true)
+    return res
 
-compile_wrap(tree)
+res = compile_wrap(tree)
 print res
+make_a = res[2][1]
+print make_a
+res2 = make_a()
+print res2
+make_c = res2[1][1]
+print make_c
+res3 = make_c()
+print res3
