@@ -124,7 +124,7 @@ class Redirection(object):
 
 @called_from_asm
 def print_int64(i):
-    pass #print i
+    print i
 print_int64_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64)(print_int64)
 print_int64_addr = ctypes.cast(print_int64_cfunc, ctypes.c_void_p).value
 
