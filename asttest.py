@@ -88,19 +88,38 @@ def compile(bs, t):
         bs.code.add(isa.pop(MemRef(registers.rsp, bs.get_loc(target.id))))
     elif isinstance(t, ast.Num):
         bs.code.add(isa.push(t.n))
+    elif isinstance(t, ast.Name):
+        bs.code.add(isa.push(MemRef(registers.rsp, bs.get_loc(t.id))))
     elif isinstance(t, ast.While):
-        def make_a(code):
-            bs = BlockStatus()
-            bs.on_true = lambda bs: util.Redirection(bs.code, make_b)
-            bs = compile_wrap(bs, t.test)
-            util.Redirection(bs.code, make_c) # jmp
-            return bs.finalise()
-        def make_b(code):
-            bs = BlockStatus()
-            bs = compile_wrap(bs, t.body)
-            util.Redirection(bs.code, make_a)
-            return bs.finalise()
-        def make_c(code):
+        def make_a(caller):
+            if 'a' in refs:
+                p = refs['a']
+            else:
+                print "make_a"
+                bs = BlockStatus()
+                bs.on_true = lambda bs: util.Redirection(bs.code, make_b)
+                bs = compile_wrap(bs, t.test)
+                util.Redirection(bs.code, make_c) # jmp
+                p = bs.finalise()
+                blocks.append(p)
+                refs['a'] = p
+                p.print_code()
+            caller.replace(util.get_jmp(p.inst_addr()))
+        def make_b(caller):
+            if 'b' in refs:
+                p = refs['b']
+            else:
+                print "make_b"
+                bs = BlockStatus()
+                bs = compile_wrap(bs, t.body)
+                util.Redirection(bs.code, make_a)
+                p = bs.finalise()
+                blocks.append(p)
+                refs['b'] = p
+                p.print_code()
+            caller.replace(util.get_jmp(p.inst_addr()))
+        def make_c(caller):
+            print "make_c"
             return g.switch([])
         util.Redirection(bs.code, make_a)
         g = greenlet.getcurrent() # save current for make_c
@@ -114,6 +133,16 @@ def compile(bs, t):
         bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
         #code.add(isa.sub(regsisters
         bs.code.add(isa.call(registers.rax))
+    elif isinstance(t, ast.BinOp):
+        compile(bs, t.left)
+        compile(bs, t.right)
+        if isinstance(t.op, ast.Add):
+            bs.code.add(isa.pop(registers.rax))
+            bs.code.add(isa.pop(registers.rbx))
+            bs.code.add(isa.add(registers.rax, registers.rbx))
+            bs.code.add(isa.push(registers.rax))
+        else:
+            print t.op
     else:
         print t
     return bs
@@ -145,11 +174,14 @@ def add_root(tree):
     refs[1]
 
 
-#refs = {}
+refs = {}
 tree = ast.parse(open(sys.argv[1]).read())
+#print tree
+#print dump(tree)
+#fadf
 #add_parents(tree)
 #print tree.parent
-#print dump(tree)
+print dump(tree)
 blocks = []
 def make_root(redir):
     bs = BlockStatus()
