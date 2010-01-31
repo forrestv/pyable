@@ -55,7 +55,7 @@ class BlockStatus(object):
         self.code = self.program.get_stream()
         self.locs = {}
         self.local_count = 0
-        # self.on_true
+        self.on_true = None
     def get_loc(self, name):
         if name not in self.locs:
             self.locs[name] = self.local_count
@@ -76,7 +76,7 @@ def compile(bs, t):
             bs = compile(bs, x)
     elif isinstance(t, ast.Module):
         bs.code.add(isa.enter(128,0))
-        compile(bs, t.body)
+        bs = compile(bs, t.body)
         bs.code.add(isa.leave())
         bs.code.add(isa.ret())
     elif isinstance(t, ast.Assign):
@@ -119,15 +119,35 @@ def compile(bs, t):
                 p.print_code()
             caller.replace(util.get_jmp(p.inst_addr()))
         def make_c(caller):
-            print "make_c"
-            return g.switch([])
+            if 'c' in refs:
+                p = refs['c']
+            else:
+                print "make_c"
+                bs = BlockStatus()
+                bs = g.switch(bs)
+                p = bs.finalise()
+                blocks.append(p)
+                refs['c'] = p
+                p.print_code()
+            caller.replace(util.get_jmp(p.inst_addr()))
         util.Redirection(bs.code, make_a)
         g = greenlet.getcurrent() # save current for make_c
         bs = g.parent.switch(bs) # return, with results in res
     elif isinstance(t, ast.Compare):
-        dump(t)
+        assert bs.on_true
+        compile(bs, t.left)
+        c, = t.comparators
+        compile(bs, c)
+        bs.code.add(isa.pop(registers.rax))
+        bs.code.add(isa.pop(registers.rbx))
+        bs.code.add(isa.cmp(registers.rbx, registers.rax))
+        op, = t.ops
+        label = bs.program.get_unique_label()
+        if isinstance(op, ast.Lt):
+            bs.code.add(isa.jge(label))
         bs.on_true(bs)
-        #bs.code.add("COMPARE, IF YES %r" % (on_true,))
+        bs.on_true = None
+        bs.code.add(label)
     elif isinstance(t, ast.Print):
         bs.code.add(isa.mov(registers.rdi, MemRef(registers.rsp, bs.get_loc(t.values[0].id))))
         bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
@@ -136,15 +156,17 @@ def compile(bs, t):
     elif isinstance(t, ast.BinOp):
         compile(bs, t.left)
         compile(bs, t.right)
+        bs.code.add(isa.pop(registers.rax))
+        bs.code.add(isa.pop(registers.rbx))
         if isinstance(t.op, ast.Add):
-            bs.code.add(isa.pop(registers.rax))
-            bs.code.add(isa.pop(registers.rbx))
             bs.code.add(isa.add(registers.rax, registers.rbx))
-            bs.code.add(isa.push(registers.rax))
+        elif isinstance(t.op, ast.Sub):
+            bs.code.add(isa.sub(registers.rax, registers.rbx))
         else:
-            print t.op
+            assert False, t.op
+        bs.code.add(isa.push(registers.rax))
     else:
-        print t
+        assert False, t
     return bs
 
 def compile_wrap(bs, t):
@@ -181,7 +203,7 @@ tree = ast.parse(open(sys.argv[1]).read())
 #fadf
 #add_parents(tree)
 #print tree.parent
-print dump(tree)
+#print dump(tree)
 blocks = []
 def make_root(redir):
     bs = BlockStatus()
@@ -202,8 +224,8 @@ caller = caller()
 
 processor = platform.Processor()
 import time
-#print "STARTING"
+print "STARTING"
 start = time.time()
 ret = processor.execute(caller, mode='int')
 end = time.time()
-#print "END", ret, end-start
+print "END", ret, end-start
