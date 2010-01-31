@@ -58,38 +58,61 @@ class EndBlock(Exception): pass
 
 refs = {}
 
-def compile(t, res, locs, on_true=None):
+class BlockProgress(object):
+    def __init__(self, code):
+        self.code = code
+        self.locs = {}
+
+class Block(object):
+    def __init__(self, program):
+        self.program = program
+
+def make_block_from_tree(tree):
+    program = platform.Program()
+    code = program.get_stream()
+    greenlet.greenlet(compile).switch(t, code, on_true)
+    program.add(code)
+    program.cache_code()
+    return program
+
+def make_block_from_func(f):
+    program = platform.Program()
+    code = program.get_stream()
+    greenlet.greenlet(f).switch(code, on_true)
+    program.add(code)
+    program.cache_code()
+    return program
+
+def compile(bs, t):
     if isinstance(t, ast.Module):
         for x in t.body:
-            res = compile(x, res, locs)
-        res.add(isa.ret())
+            bs = compile(bs, x)
+        bs.code.add(isa.ret())
     elif isinstance(t, ast.Assign):
-        res = compile(t.value, res, locs)
+        res = compile(bs, t.value)
         assert len(t.targets) == 1
         target = t.targets[0]
         assert isinstance(target, ast.Name)
         assert isinstance(target.ctx, ast.Store)
-        res.add("pop %s" % target.id)
+        bs.code.add(isa.pop(target.id))
     elif isinstance(t, ast.Num):
         res.add(isa.push(t.n))
     elif isinstance(t, ast.While):
-        def make_b():
+        def make_b(code):
             res = []
             for x in t.body:
                 res.extend(compile_wrap(x))
             res.append(("jmp", make_a))
             return res
-        def make_c():
-            return g.switch()
-        def make_a():
+        def make_c(code):
+            return g.switch([])
+        def make_a(code):
             res = compile_wrap(t.test, on_true=("jmp", make_b))
             res.append(("jmp", make_c))
             return res
         res.append(("jmp", make_a))
-        # MAGIC
-        g = greenlet.getcurrent()
-        g.parent.switch()
-        res = []
+        g = greenlet.getcurrent() # save current for make_c
+        res = g.parent.switch(res) # return, with results in res
     elif isinstance(t, ast.Compare):
         res.add("COMPARE, IF YES %r" % (on_true,))
     elif isinstance(t, ast.Print):
@@ -97,15 +120,6 @@ def compile(t, res, locs, on_true=None):
     else:
         print t
     return res
-
-#def compile2(a):
-#    def push_ast(a):
-#        t.append((a, 0))
-#    t = []
-#    push_ast(a)
-#    while t:
-#        a = t.pop()
-#        if 
 
 def compile_wrap(t, on_true=None):
     g = greenlet.greenlet(compile)
@@ -124,14 +138,17 @@ print make_c
 res3 = make_c()
 print res3
 '''
-def do_it(tree):
-    program = platform.Program()
-    locs = {}
-    code = program.get_stream()
-    compile(tree, code, locs)
-    program.add(code)
-    program.cache_code()
-    return program
+def add_root(tree):
+    def make_root(tree):
+        program = platform.Program()
+        locs = {}
+        code = program.get_stream()
+        compile(tree, code, locs)
+        program.add(code)
+        program.cache_code()
+        return program
+    refs[
+
 
 r = do_it(tree)
 print r
