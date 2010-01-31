@@ -1,7 +1,7 @@
 import ast
+import sys
 
 import greenlet
-
 
 import corepy.arch.x86_64.isa as isa
 import corepy.arch.x86_64.types.registers as registers
@@ -9,6 +9,8 @@ import corepy.arch.x86_64.platform as platform
 from corepy.arch.x86_64.lib.memory import MemRef
 import corepy.lib.extarray as extarray
 import corepy.arch.x86_64.lib.util as util
+
+import util
 
 def dump(node, annotate_fields=True, include_attributes=False):
     """
@@ -37,7 +39,6 @@ def dump(node, annotate_fields=True, include_attributes=False):
         raise TypeError('expected AST, got %r' % node.__class__.__name__)
     return _format(node)
 
-tree = ast.parse(open('test/1.py').read())
 def add_parents(node, parent=None):
     node.parent = parent
     for fieldname, value in ast.iter_fields(node):
@@ -47,85 +48,79 @@ def add_parents(node, parent=None):
             for i, child in enumerate(value):
                 assert isinstance(child, ast.AST)
                 add_parents(child, (node, fieldname, i))
-add_parents(tree)
-print tree.parent
-print dump(tree)
 
-class EndBlock(Exception): pass
-
-#class AstTraverser(object):
-#    def __init__(self, 
-
-refs = {}
-
-class BlockProgress(object):
-    def __init__(self, code):
-        self.code = code
+class BlockStatus(object):
+    def __init__(self):
+        self.program = util.BareProgram()
+        self.code = self.program.get_stream()
         self.locs = {}
+        self.local_count = 0
+        # self.on_true
+    def get_loc(self, name):
+        if name not in self.locs:
+            self.locs[name] = self.local_count
+            self.local_count += 1
+        return self.locs[name]
+    def finalise(self):
+        self.program.add(self.code)
+        self.program.cache_code()
+        return self.program
 
 class Block(object):
     def __init__(self, program):
         self.program = program
 
-def make_block_from_tree(tree):
-    program = platform.Program()
-    code = program.get_stream()
-    greenlet.greenlet(compile).switch(t, code, on_true)
-    program.add(code)
-    program.cache_code()
-    return program
-
-def make_block_from_func(f):
-    program = platform.Program()
-    code = program.get_stream()
-    greenlet.greenlet(f).switch(code, on_true)
-    program.add(code)
-    program.cache_code()
-    return program
-
 def compile(bs, t):
-    if isinstance(t, ast.Module):
-        for x in t.body:
+    if isinstance(t, list):
+        for x in t:
             bs = compile(bs, x)
+    elif isinstance(t, ast.Module):
+        bs.code.add(isa.enter(128,0))
+        compile(bs, t.body)
+        bs.code.add(isa.leave())
         bs.code.add(isa.ret())
     elif isinstance(t, ast.Assign):
-        res = compile(bs, t.value)
+        bs = compile(bs, t.value)
         assert len(t.targets) == 1
         target = t.targets[0]
         assert isinstance(target, ast.Name)
         assert isinstance(target.ctx, ast.Store)
-        bs.code.add(isa.pop(target.id))
+        bs.code.add(isa.pop(MemRef(registers.rsp, bs.get_loc(target.id))))
     elif isinstance(t, ast.Num):
-        res.add(isa.push(t.n))
+        bs.code.add(isa.push(t.n))
     elif isinstance(t, ast.While):
+        def make_a(code):
+            bs = BlockStatus()
+            bs.on_true = lambda bs: util.Redirection(bs.code, make_b)
+            bs = compile_wrap(bs, t.test)
+            util.Redirection(bs.code, make_c) # jmp
+            return bs.finalise()
         def make_b(code):
-            res = []
-            for x in t.body:
-                res.extend(compile_wrap(x))
-            res.append(("jmp", make_a))
-            return res
+            bs = BlockStatus()
+            bs = compile_wrap(bs, t.body)
+            util.Redirection(bs.code, make_a)
+            return bs.finalise()
         def make_c(code):
             return g.switch([])
-        def make_a(code):
-            res = compile_wrap(t.test, on_true=("jmp", make_b))
-            res.append(("jmp", make_c))
-            return res
-        res.append(("jmp", make_a))
+        util.Redirection(bs.code, make_a)
         g = greenlet.getcurrent() # save current for make_c
-        res = g.parent.switch(res) # return, with results in res
+        bs = g.parent.switch(bs) # return, with results in res
     elif isinstance(t, ast.Compare):
-        res.add("COMPARE, IF YES %r" % (on_true,))
+        dump(t)
+        bs.on_true(bs)
+        #bs.code.add("COMPARE, IF YES %r" % (on_true,))
     elif isinstance(t, ast.Print):
-        res.add("call print %s" % t.values)
+        bs.code.add(isa.mov(registers.rdi, MemRef(registers.rsp, bs.get_loc(t.values[0].id))))
+        bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
+        #code.add(isa.sub(regsisters
+        bs.code.add(isa.call(registers.rax))
     else:
         print t
-    return res
+    return bs
 
-def compile_wrap(t, on_true=None):
+def compile_wrap(bs, t):
     g = greenlet.greenlet(compile)
-    res = []
-    g.switch(t, res, on_true)
-    return res
+    return g.switch(bs, t)
 '''
 res = compile_wrap(tree)
 print res
@@ -147,8 +142,36 @@ def add_root(tree):
         program.add(code)
         program.cache_code()
         return program
-    refs[
+    refs[1]
 
 
-r = do_it(tree)
-print r
+#refs = {}
+tree = ast.parse(open(sys.argv[1]).read())
+#add_parents(tree)
+#print tree.parent
+#print dump(tree)
+blocks = []
+def make_root(redir):
+    bs = BlockStatus()
+    r = compile_wrap(bs, tree)
+    p = bs.finalise()
+    blocks.append(p)
+    #p.print_code(pro=True, epi=True)
+    redir.replace(util.get_call(p.inst_addr()))
+
+def caller():
+    program = util.Program()
+    code = program.get_stream()
+    util.Redirection(code, make_root)
+    program.add(code)
+    program.cache_code()
+    return program
+caller = caller()
+
+processor = platform.Processor()
+import time
+#print "STARTING"
+start = time.time()
+ret = processor.execute(caller, mode='int')
+end = time.time()
+#print "END", ret, end-start
