@@ -145,6 +145,18 @@ def compile(bs, t):
         label = bs.program.get_unique_label()
         if isinstance(op, ast.Lt):
             bs.code.add(isa.jge(label))
+        elif isinstance(op, ast.Gt):
+            bs.code.add(isa.jle(label))
+        elif isinstance(op, ast.LtE):
+            bs.code.add(isa.jg(label))
+        elif isinstance(op, ast.GtE):
+            bs.code.add(isa.jl(label))
+        elif isinstance(op, ast.Eq):
+            bs.code.add(isa.jne(label))
+        elif isinstance(op, ast.NotEq):
+            bs.code.add(isa.je(label))
+        else:
+            assert False, op
         bs.on_true(bs)
         bs.on_true = None
         bs.code.add(label)
