@@ -5,7 +5,6 @@ import traceback
 import corepy.arch.x86_64.isa as isa
 import corepy.arch.x86_64.types.registers as registers
 import corepy.arch.x86_64.platform as platform
-#import corepy.arch.x86_64.fields as fields
 
 class Program(platform.Program):
   def __init__(self, *args, **kwargs):
@@ -71,11 +70,11 @@ class Redirection(object):
     while True:
         callback(<Redirection object>)
     
-    and frobulate rax.
+    while frobulating rax.
     
     Offers a 'replace' method that replaces this with other code,
-    which must be a specific length. It is usually replaced with a call or jmp
-    from get_call and get_jmp.
+    which must be a specific length. It is usually replaced with
+    a call or jmp from get_call and get_jmp.
     """
     
     def __init__(self, caller_code, callback):

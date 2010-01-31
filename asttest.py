@@ -117,6 +117,12 @@ def compile(bs, t):
                 blocks.append(p)
                 refs['b'] = p
                 p.print_code()
+            if 0:
+                bs = BlockStatus()
+                bs = compile_wrap(bs, t.body)
+                util.Redirection(bs.code, make_a)
+                p = bs.finalise()
+                blocks.append(p)
             caller.replace(util.get_jmp(p.inst_addr()))
         def make_c(caller):
             if 'c' in refs:
@@ -138,9 +144,9 @@ def compile(bs, t):
         compile(bs, t.left)
         c, = t.comparators
         compile(bs, c)
-        bs.code.add(isa.pop(registers.rax))
         bs.code.add(isa.pop(registers.rbx))
-        bs.code.add(isa.cmp(registers.rbx, registers.rax))
+        bs.code.add(isa.pop(registers.rax))
+        bs.code.add(isa.cmp(registers.rax, registers.rbx))
         op, = t.ops
         label = bs.program.get_unique_label()
         if isinstance(op, ast.Lt):
@@ -168,12 +174,16 @@ def compile(bs, t):
     elif isinstance(t, ast.BinOp):
         compile(bs, t.left)
         compile(bs, t.right)
-        bs.code.add(isa.pop(registers.rax))
         bs.code.add(isa.pop(registers.rbx))
+        bs.code.add(isa.pop(registers.rax))
         if isinstance(t.op, ast.Add):
             bs.code.add(isa.add(registers.rax, registers.rbx))
         elif isinstance(t.op, ast.Sub):
             bs.code.add(isa.sub(registers.rax, registers.rbx))
+        elif isinstance(t.op, ast.Mult):
+            bs.code.add(isa.imul(registers.rax, registers.rbx))
+        elif isinstance(t.op, ast.Div):
+            bs.code.add(isa.idiv(registers.rbx))
         else:
             assert False, t.op
         bs.code.add(isa.push(registers.rax))

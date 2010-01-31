@@ -1,6 +1,7 @@
-x = 0
+x = 2
 while x < 1000000:
-    x = x + 1
+    print x
+    x = x + x / 2
 print x
 
 #block0
