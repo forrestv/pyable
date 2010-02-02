@@ -1,7 +1,9 @@
 x = 2
+y = -x*2
 while x < 1000000:
-    print x
-    x = x + x / 2
+    #print x
+    x += 2*x
+print y
 print x
 
 #block0

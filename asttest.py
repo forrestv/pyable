@@ -11,6 +11,7 @@ import corepy.lib.extarray as extarray
 import corepy.arch.x86_64.lib.util as util
 
 import util
+from cdict import cdict
 
 def dump(node, annotate_fields=True, include_attributes=False):
     """
@@ -58,27 +59,57 @@ class BlockStatus(object):
         self.on_true = None
     def get_loc(self, name):
         if name not in self.locs:
-            self.locs[name] = self.local_count
+            self.locs[name] = self.local_count*8
             self.local_count += 1
         return self.locs[name]
     def finalise(self):
         self.program.add(self.code)
         self.program.cache_code()
-        return self.program
+        return self.program #return Block(self.program)
 
 class Block(object):
     def __init__(self, program):
         self.program = program
+
+class Function(object):
+    def __init__(self, ast):
+        self.ast = ast
+        assert isinstance(self.ast, ast.FunctionDef)
+        self.addr = None
+        self.program = None
+    def _get_addr(self):
+        if self.addr is None:
+            self._render()
+        return self.addr
+    def add_call(self, code):
+        if self.addr:
+            code.add(isa.mov(registers.rax, util.fake_int(self.addr)))
+            code.add(isa.call(registers.rax))
+        else:
+            util.Redirection(_redir_callback)
+    def redir_callback(self, redir):
+        redir.replace(util.get_call(self._get_addr()))
+
+functions = {}
 
 def compile(bs, t):
     if isinstance(t, list):
         for x in t:
             bs = compile(bs, x)
     elif isinstance(t, ast.Module):
-        bs.code.add(isa.enter(128,0))
+        enter_index = bs.code.add(isa.enter(128, 0)) - 1
         bs = compile(bs, t.body)
         bs.code.add(isa.leave())
         bs.code.add(isa.ret())
+        #bs.code[enter_index] = isa.enter(len(bs.locs)*8, 0)
+    elif isinstance(t, ast.FunctionDef):
+        enter_index = bs.code.add(isa.enter(128, 0)) - 1
+        bs = compile(bs, t.body)
+        bs.code.add(isa.leave())
+        bs.code.add(isa.ret())
+    elif isinstance(t, ast.AugAssign):
+        bs = compile(bs, ast.Assign(targets=[t.target],
+            value=ast.BinOp(left=t.target, op=t.op, right=t.value)))
     elif isinstance(t, ast.Assign):
         bs = compile(bs, t.value)
         assert len(t.targets) == 1
@@ -86,11 +117,29 @@ def compile(bs, t):
         assert isinstance(target, ast.Name)
         assert isinstance(target.ctx, ast.Store)
         bs.code.add(isa.pop(MemRef(registers.rsp, bs.get_loc(target.id))))
+    elif isinstance(t, ast.Expr):
+        bs = compile(bs, t.value)
+        bs.code.add(isa.add(registers.rsp, 8)) #bs.code.add(isa.pop(registers.rax))
     elif isinstance(t, ast.Num):
         bs.code.add(isa.push(t.n))
     elif isinstance(t, ast.Name):
         bs.code.add(isa.push(MemRef(registers.rsp, bs.get_loc(t.id))))
+    elif isinstance(t, ast.If):
+        def make_a():
+            a
+        bs.on_true = lambda bs: util.Redirection(bs.code, make_a)
+        bs = compile_wrap(bs, t.test)
+        util.Redirection(bs.code, make_b) # jmp
+        p = bs.finalise()
+        blocks.append(p)
+        refs['a'] = p
+        p.print_code()
+        caller.replace(util.get_jmp(p.inst_addr()))
+        util.Redirection(bs.code, make_a)
+        g = greenlet.getcurrent()
+        bs = g.parent.switch(bs)
     elif isinstance(t, ast.While):
+        a = object()
         def make_a(caller):
             if 'a' in refs:
                 p = refs['a']
@@ -171,6 +220,14 @@ def compile(bs, t):
         bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
         #code.add(isa.sub(regsisters
         bs.code.add(isa.call(registers.rax))
+    elif isinstance(t, ast.UnaryOp):
+        compile(bs, t.operand)
+        bs.code.add(isa.pop(registers.rax))
+        if isinstance(t.op, ast.USub):
+            bs.code.add(isa.neg(registers.rax))
+        else:
+            assert False, t.op
+        bs.code.add(isa.push(registers.rax))
     elif isinstance(t, ast.BinOp):
         compile(bs, t.left)
         compile(bs, t.right)
@@ -218,14 +275,15 @@ def add_root(tree):
     refs[1]
 
 
-refs = {}
+prerefs = {}
+refs = cdict(lambda k: prerefs.pop(k)())
 tree = ast.parse(open(sys.argv[1]).read())
 #print tree
 #print dump(tree)
 #fadf
 #add_parents(tree)
 #print tree.parent
-#print dump(tree)
+print dump(tree)
 blocks = []
 def make_root(redir):
     bs = BlockStatus()
@@ -233,6 +291,9 @@ def make_root(redir):
     p = bs.finalise()
     blocks.append(p)
     #p.print_code(pro=True, epi=True)
+    if 1:
+        print "make_root"
+        p.print_code()
     redir.replace(util.get_call(p.inst_addr()))
 
 def caller():
