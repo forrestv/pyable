@@ -65,16 +65,16 @@ class BlockStatus(object):
     def finalise(self):
         self.program.add(self.code)
         self.program.cache_code()
-        return self.program #return Block(self.program)
+        return self.program # return Block(self.program)
 
 class Block(object):
     def __init__(self, program):
         self.program = program
 
 class Function(object):
-    def __init__(self, ast):
-        self.ast = ast
-        assert isinstance(self.ast, ast.FunctionDef)
+    def __init__(self, t):
+        self.t = t
+        assert isinstance(self.t, ast.FunctionDef)
         self.addr = None
         self.program = None
     def _get_addr(self):
@@ -86,7 +86,7 @@ class Function(object):
             code.add(isa.mov(registers.rax, util.fake_int(self.addr)))
             code.add(isa.call(registers.rax))
         else:
-            util.Redirection(_redir_callback)
+            util.Redirection(self._redir_callback)
     def redir_callback(self, redir):
         redir.replace(util.get_call(self._get_addr()))
 
@@ -103,10 +103,7 @@ def compile(bs, t):
         bs.code.add(isa.ret())
         #bs.code[enter_index] = isa.enter(len(bs.locs)*8, 0)
     elif isinstance(t, ast.FunctionDef):
-        enter_index = bs.code.add(isa.enter(128, 0)) - 1
-        bs = compile(bs, t.body)
-        bs.code.add(isa.leave())
-        bs.code.add(isa.ret())
+        functions[t.name] = Function(t)
     elif isinstance(t, ast.AugAssign):
         bs = compile(bs, ast.Assign(targets=[t.target],
             value=ast.BinOp(left=t.target, op=t.op, right=t.value)))
@@ -190,9 +187,9 @@ def compile(bs, t):
         bs = g.parent.switch(bs) # return, with results in res
     elif isinstance(t, ast.Compare):
         assert bs.on_true
-        compile(bs, t.left)
+        bs = compile(bs, t.left)
         c, = t.comparators
-        compile(bs, c)
+        bs = compile(bs, c)
         bs.code.add(isa.pop(registers.rbx))
         bs.code.add(isa.pop(registers.rax))
         bs.code.add(isa.cmp(registers.rax, registers.rbx))
@@ -221,7 +218,7 @@ def compile(bs, t):
         #code.add(isa.sub(regsisters
         bs.code.add(isa.call(registers.rax))
     elif isinstance(t, ast.UnaryOp):
-        compile(bs, t.operand)
+        bs = compile(bs, t.operand)
         bs.code.add(isa.pop(registers.rax))
         if isinstance(t.op, ast.USub):
             bs.code.add(isa.neg(registers.rax))
@@ -229,8 +226,8 @@ def compile(bs, t):
             assert False, t.op
         bs.code.add(isa.push(registers.rax))
     elif isinstance(t, ast.BinOp):
-        compile(bs, t.left)
-        compile(bs, t.right)
+        bs = compile(bs, t.left)
+        bs = compile(bs, t.right)
         bs.code.add(isa.pop(registers.rbx))
         bs.code.add(isa.pop(registers.rax))
         if isinstance(t.op, ast.Add):
@@ -243,6 +240,17 @@ def compile(bs, t):
             bs.code.add(isa.idiv(registers.rbx))
         else:
             assert False, t.op
+        bs.code.add(isa.push(registers.rax))
+    elif isinstance(t, ast.Call):
+        assert not t.keywords
+        assert not t.starargs
+        assert not t.kwargs
+        for arg in t.args:
+            bs = compile(bs, arg)
+        regs = [registers.rdi, registers.rsi, registers.rdx, registers.rcx][:len(t.args)]
+        for arg in t.args:
+            bs.code.add(isa.pop(regs.pop()))
+        functions[t.func.id].add_call(bs.code)
         bs.code.add(isa.push(registers.rax))
     else:
         assert False, t

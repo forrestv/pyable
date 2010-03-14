@@ -1,6 +1,6 @@
 x = 2
 y = -x*2
-while x < 1000000:
+while x < 10000000:
     #print x
     x += 2*x
 print y
