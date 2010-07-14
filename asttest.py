@@ -8,10 +8,13 @@ import corepy.arch.x86_64.types.registers as registers
 import corepy.arch.x86_64.platform as platform
 from corepy.arch.x86_64.lib.memory import MemRef
 import corepy.lib.extarray as extarray
+import corepy.lib.printer as printer
 import corepy.arch.x86_64.lib.util as util
 
 import util
 from cdict import cdict
+
+DEBUG = 0
 
 def dump(node, annotate_fields=True, include_attributes=False):
     """
@@ -50,19 +53,60 @@ def add_parents(node, parent=None):
                 assert isinstance(child, ast.AST)
                 add_parents(child, (node, fieldname, i))
 
+class Function(object):
+    def __init__(self, space):
+        self.space = space
+        self.vars = {}
+    def emit_start(self, code):
+        code.add(isa.enter(self.space * 8, 0))
+    def emit_end(self, code):
+        code.add(isa.leave())
+        code.add(isa.ret())
+        #bs.code[enter_index] = isa.enter(len(bs.locs)*8, 0)
+    def get_var_loc(self, name):
+        try:
+            return self.vars[name] - self.space
+        except KeyError:
+            if len(self.vars) == self.space:
+                raise MemoryError
+            self.vars[name] = len(self.vars)* 8
+            return self.get_var_loc(name)
+
 class BlockStatus(object):
-    def __init__(self):
+    def __init__(self, function=None):
+        if function is None:
+            function = Function(1000)
+        self.function = function
         self.program = util.BareProgram()
         self.code = self.program.get_stream()
-        self.locs = {}
-        self.local_count = 0
-        self.on_true = None
-    def get_loc(self, name):
-        if name not in self.locs:
-            self.locs[name] = self.local_count*8
-            self.local_count += 1
-        return self.locs[name]
+    
     def finalise(self):
+        while True:
+            old = self.code
+            res = self.program.get_stream()
+            for i in xrange(len(old)):
+                if i != len(old) - 1 and \
+                    str(old[i]) == str(isa.push(registers.rax)) and \
+                    str(old[i + 1]) == str(isa.pop(registers.rax)):
+                        pass
+                elif i != 0 and \
+                    str(old[i - 1]) == str(isa.push(registers.rax)) and \
+                    str(old[i]) == str(isa.pop(registers.rax)):
+                        pass
+                else:
+                    res.add(old[i])
+            if len(res) < len(old):
+                if DEBUG:
+                    print "DECREASE", len(res), len(old)
+                    for i in xrange(10):
+                        print
+                    self.code.print_code()
+                    for i in xrange(5):
+                        print "------"
+                    res.print_code()
+                self.code = res
+            else:
+                break
         self.program.add(self.code)
         self.program.cache_code()
         return self.program # return Block(self.program)
@@ -71,7 +115,7 @@ class Block(object):
     def __init__(self, program):
         self.program = program
 
-class Function(object):
+class _Function(object):
     def __init__(self, t):
         self.t = t
         assert isinstance(self.t, ast.FunctionDef)
@@ -93,107 +137,178 @@ class Function(object):
 functions = {}
 
 def compile(bs, t):
+    if DEBUG and 0:
+        bs.code.add(bs.program.get_label(str(t)))
+        print "stat" + str(t)
     if isinstance(t, list):
         for x in t:
             bs = compile(bs, x)
     elif isinstance(t, ast.Module):
-        enter_index = bs.code.add(isa.enter(128, 0)) - 1
+        bs.function.emit_start(bs.code)
+        #bs.code.add(isa.mov(registers.rax, 1337332))
+        #bs.code.add(isa.push(registers.rax))
         bs = compile(bs, t.body)
-        bs.code.add(isa.leave())
-        bs.code.add(isa.ret())
-        #bs.code[enter_index] = isa.enter(len(bs.locs)*8, 0)
+        bs.function.emit_end(bs.code)
     elif isinstance(t, ast.FunctionDef):
         functions[t.name] = Function(t)
     elif isinstance(t, ast.AugAssign):
         bs = compile(bs, ast.Assign(targets=[t.target],
             value=ast.BinOp(left=t.target, op=t.op, right=t.value)))
     elif isinstance(t, ast.Assign):
+        #bs.code.add(isa.push(-42))
         bs = compile(bs, t.value)
         assert len(t.targets) == 1
         target = t.targets[0]
         assert isinstance(target, ast.Name)
         assert isinstance(target.ctx, ast.Store)
-        bs.code.add(isa.pop(MemRef(registers.rsp, bs.get_loc(target.id))))
+        bs.code.add(isa.pop(registers.rax))
+        bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(target.id)), registers.rax))
+        #bs.code.add(isa.pop(registers.rdi))
+        #bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
+        #bs.code.add(isa.call(registers.rax))
     elif isinstance(t, ast.Expr):
         bs = compile(bs, t.value)
-        bs.code.add(isa.add(registers.rsp, 8)) #bs.code.add(isa.pop(registers.rax))
+        #bs.code.add(isa.add(registers.rsp, 8)) #
+        bs.code.add(isa.pop(registers.rax))
     elif isinstance(t, ast.Num):
-        bs.code.add(isa.push(t.n))
+        bs.code.add(isa.mov(registers.rax, t.n))
+        bs.code.add(isa.push(registers.rax))
     elif isinstance(t, ast.Name):
-        bs.code.add(isa.push(MemRef(registers.rsp, bs.get_loc(t.id))))
+        bs.code.add(isa.mov(registers.rax, MemRef(registers.rbp, bs.function.get_var_loc(t.id))))
+        bs.code.add(isa.push(registers.rax))
     elif isinstance(t, ast.If):
-        def make_a():
-            a
-        bs.on_true = lambda bs: util.Redirection(bs.code, make_a)
-        bs = compile_wrap(bs, t.test)
-        util.Redirection(bs.code, make_b) # jmp
-        p = bs.finalise()
-        blocks.append(p)
-        refs['a'] = p
-        p.print_code()
-        caller.replace(util.get_jmp(p.inst_addr()))
-        util.Redirection(bs.code, make_a)
-        g = greenlet.getcurrent()
-        bs = g.parent.switch(bs)
-    elif isinstance(t, ast.While):
-        a = object()
-        def make_a(caller):
-            if 'a' in refs:
-                p = refs['a']
-            else:
-                print "make_a"
-                bs = BlockStatus()
-                bs.on_true = lambda bs: util.Redirection(bs.code, make_b)
-                bs = compile_wrap(bs, t.test)
-                util.Redirection(bs.code, make_c) # jmp
-                p = bs.finalise()
-                blocks.append(p)
-                refs['a'] = p
-                p.print_code()
-            caller.replace(util.get_jmp(p.inst_addr()))
+        b = object()
+        c = object()
         def make_b(caller):
-            if 'b' in refs:
-                p = refs['b']
+            if b in refs:
+                p = refs[b]
             else:
-                print "make_b"
-                bs = BlockStatus()
+                if DEBUG:
+                    print "make_b if"
+                bs = BlockStatus(a_bs.function)
                 bs = compile_wrap(bs, t.body)
-                util.Redirection(bs.code, make_a)
+                util.Redirection(bs.code, make_c)
                 p = bs.finalise()
                 blocks.append(p)
-                refs['b'] = p
-                p.print_code()
-            if 0:
-                bs = BlockStatus()
-                bs = compile_wrap(bs, t.body)
-                util.Redirection(bs.code, make_a)
-                p = bs.finalise()
-                blocks.append(p)
+                refs[b] = p
+                if DEBUG:
+                    print "addr", hex(p.inst_addr())
+                    p.print_code()
+                #printer.PrintInstructionStream(bs.code, printer.x86_64_Nasm(function_name="foobar"))
             caller.replace(util.get_jmp(p.inst_addr()))
         def make_c(caller):
-            if 'c' in refs:
-                p = refs['c']
+            if c in refs:
+                p = refs[c]
             else:
-                print "make_c"
-                bs = BlockStatus()
+                if DEBUG:
+                    print "make_c if"
+                bs = BlockStatus(a_bs.function)
                 bs = g.switch(bs)
                 p = bs.finalise()
                 blocks.append(p)
-                refs['c'] = p
-                p.print_code()
+                refs[c] = p
+                if DEBUG:
+                    print "addr", hex(p.inst_addr())
+                    p.print_code()
             caller.replace(util.get_jmp(p.inst_addr()))
+        
+        a_bs = bs
+        
+        bs = compile(bs, t.test)
+        bs.code.add(isa.pop(registers.rax))
+        bs.code.add(isa.test(registers.rax, registers.rax))
+        skip = bs.program.get_unique_label()
+        bs.code.add(isa.jz(skip))
+        util.Redirection(bs.code, make_b)
+        bs.code.add(skip)
+        util.Redirection(bs.code, make_c)
+        
+        g = greenlet.getcurrent() # save current for make_c
+        bs = g.parent.switch(bs) # return, with results in res
+    elif isinstance(t, ast.While):
+        a = object()
+        b = object()
+        c = object()
+        def make_a(caller):
+            if a in refs:
+                p = refs[a]
+            else:
+                if DEBUG:
+                    print "make_a"
+                bs = BlockStatus(orig_bs.function)
+                bs = compile(bs, t.test)
+                bs.code.add(isa.pop(registers.rax))
+                bs.code.add(isa.test(registers.rax, registers.rax))
+                skip = bs.program.get_unique_label()
+                bs.code.add(isa.jz(skip))
+                util.Redirection(bs.code, make_b)
+                bs.code.add(skip)
+                util.Redirection(bs.code, make_c)
+                p = bs.finalise()
+                blocks.append(p)
+                refs[a] = p
+                if DEBUG:
+                    p.print_code()
+            caller.replace(util.get_jmp(p.inst_addr()))
+
+        def really_make_b(bs, t):
+                bs = compile(bs, t)
+                util.Redirection(bs.code, make_a)
+                return bs
+        def make_b(caller):
+            if b in refs:
+                p = refs[b]
+            else:
+                if DEBUG:
+                    print "make_b while"
+                bs = BlockStatus(orig_bs.function)
+                bs = compile_wrap(bs, t.body, really_make_b)
+                if DEBUG and 0:
+                    for i in xrange(10):
+                        print "nom",t.body
+                p = bs.finalise()
+                blocks.append(p)
+                refs[b] = p
+                if DEBUG:
+                    print "addr", hex(p.inst_addr())
+                    p.print_code(hex=True)
+                #printer.PrintInstructionStream(bs.code, printer.x86_64_Nasm(function_name="foobar"))
+            caller.replace(util.get_jmp(p.inst_addr()))
+        def make_c(caller):
+            if c in refs:
+                p = refs[c]
+            else:
+                if DEBUG:
+                    print "make_c while"
+                bs = BlockStatus(orig_bs.function)
+                bs = g.switch(bs)
+                p = bs.finalise()
+                blocks.append(p)
+                refs[c] = p
+                if DEBUG:
+                    print "addr", hex(p.inst_addr())
+                    p.print_code()
+            caller.replace(util.get_jmp(p.inst_addr()))
+        
+        orig_bs = bs
+        
         util.Redirection(bs.code, make_a)
         g = greenlet.getcurrent() # save current for make_c
         bs = g.parent.switch(bs) # return, with results in res
+        if DEBUG and 0:
+            print "HI"
+            print dump(t)
+            print "ENDHI"
     elif isinstance(t, ast.Compare):
-        assert bs.on_true
         bs = compile(bs, t.left)
+        op, = t.ops
         c, = t.comparators
         bs = compile(bs, c)
-        bs.code.add(isa.pop(registers.rbx))
         bs.code.add(isa.pop(registers.rax))
-        bs.code.add(isa.cmp(registers.rax, registers.rbx))
-        op, = t.ops
+        bs.code.add(isa.pop(registers.rbx))
+        bs.code.add(isa.cmp(registers.rbx, registers.rax))
+        bs.code.add(isa.mov(registers.rax, 0))
+        bs.code.add(isa.push(registers.rax))
         label = bs.program.get_unique_label()
         if isinstance(op, ast.Lt):
             bs.code.add(isa.jge(label))
@@ -209,13 +324,15 @@ def compile(bs, t):
             bs.code.add(isa.je(label))
         else:
             assert False, op
-        bs.on_true(bs)
-        bs.on_true = None
+        bs.code.add(isa.pop(registers.rax))
+        bs.code.add(isa.mov(registers.rax, 1))
+        bs.code.add(isa.push(registers.rax))
         bs.code.add(label)
     elif isinstance(t, ast.Print):
-        bs.code.add(isa.mov(registers.rdi, MemRef(registers.rsp, bs.get_loc(t.values[0].id))))
+        v, = t.values
+        bs = compile(bs, v)
+        bs.code.add(isa.pop(registers.rdi))
         bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
-        #code.add(isa.sub(regsisters
         bs.code.add(isa.call(registers.rax))
     elif isinstance(t, ast.UnaryOp):
         bs = compile(bs, t.operand)
@@ -226,10 +343,21 @@ def compile(bs, t):
             assert False, t.op
         bs.code.add(isa.push(registers.rax))
     elif isinstance(t, ast.BinOp):
-        bs = compile(bs, t.left)
         bs = compile(bs, t.right)
-        bs.code.add(isa.pop(registers.rbx))
+        bs = compile(bs, t.left)
         bs.code.add(isa.pop(registers.rax))
+        bs.code.add(isa.pop(registers.rbx))
+        if 0:
+            loop = bs.program.get_unique_label()
+            bs.code.add(isa.mov(registers.rdi, 1337331))
+            bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
+            bs.code.add(isa.call(registers.rax))
+            bs.code.add(isa.jmp(loop))
+            bs.code.add(loop)
+            bs.code.add(isa.pop(registers.rdi))
+            bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
+            bs.code.add(isa.call(registers.rax))
+            bs.code.add(isa.jmp(loop))
         if isinstance(t.op, ast.Add):
             bs.code.add(isa.add(registers.rax, registers.rbx))
         elif isinstance(t.op, ast.Sub):
@@ -237,7 +365,15 @@ def compile(bs, t):
         elif isinstance(t.op, ast.Mult):
             bs.code.add(isa.imul(registers.rax, registers.rbx))
         elif isinstance(t.op, ast.Div):
+            bs.code.add(isa.mov(registers.rdx, 0))
             bs.code.add(isa.idiv(registers.rbx))
+        elif isinstance(t.op, ast.FloorDiv):
+            bs.code.add(isa.mov(registers.rdx, 0))
+            bs.code.add(isa.idiv(registers.rbx))
+        elif isinstance(t.op, ast.Mod):
+            bs.code.add(isa.mov(registers.rdx, 0))
+            bs.code.add(isa.idiv(registers.rbx))
+            bs.code.add(isa.mov(registers.rax, registers.rdx))
         else:
             assert False, t.op
         bs.code.add(isa.push(registers.rax))
@@ -254,10 +390,13 @@ def compile(bs, t):
         bs.code.add(isa.push(registers.rax))
     else:
         assert False, t
+    if DEBUG and 0:
+        bs.code.add(bs.program.get_label("end " + str(t)))
+        print "end" + str(t)
     return bs
 
-def compile_wrap(bs, t):
-    g = greenlet.greenlet(compile)
+def compile_wrap(bs, t, f=compile):
+    g = greenlet.greenlet(f)
     return g.switch(bs, t)
 '''
 res = compile_wrap(tree)
@@ -291,7 +430,8 @@ tree = ast.parse(open(sys.argv[1]).read())
 #fadf
 #add_parents(tree)
 #print tree.parent
-print dump(tree)
+if DEBUG:
+    print dump(tree)
 blocks = []
 def make_root(redir):
     bs = BlockStatus()
@@ -299,7 +439,7 @@ def make_root(redir):
     p = bs.finalise()
     blocks.append(p)
     #p.print_code(pro=True, epi=True)
-    if 1:
+    if DEBUG:
         print "make_root"
         p.print_code()
     redir.replace(util.get_call(p.inst_addr()))
@@ -314,9 +454,11 @@ def caller():
 caller = caller()
 
 processor = platform.Processor()
-import time
-print "STARTING"
-start = time.time()
+if DEBUG:
+    import time
+    print "STARTING"
+    start = time.time()
 ret = processor.execute(caller, mode='int')
-end = time.time()
-print "END", ret, end-start
+if DEBUG:
+    end = time.time()
+    print "END", ret, end-start
