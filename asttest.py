@@ -14,8 +14,6 @@ import corepy.arch.x86_64.lib.util as util
 import util
 from cdict import cdict
 
-DEBUG = 0
-
 def dump(node, annotate_fields=True, include_attributes=False):
     """
     Return a formatted dump of the tree in *node*.  This is mainly useful for
@@ -155,14 +153,15 @@ def compile(bs, t):
         bs = compile(bs, ast.Assign(targets=[t.target],
             value=ast.BinOp(left=t.target, op=t.op, right=t.value)))
     elif isinstance(t, ast.Assign):
-        #bs.code.add(isa.push(-42))
         bs = compile(bs, t.value)
-        assert len(t.targets) == 1
-        target = t.targets[0]
-        assert isinstance(target, ast.Name)
-        assert isinstance(target.ctx, ast.Store)
         bs.code.add(isa.pop(registers.rax))
-        bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(target.id)), registers.rax))
+        for target in t.targets:
+            bs.code.add(isa.push(registers.rax))
+            bs.code.add(isa.push(registers.rax))
+            assert isinstance(target, ast.Name)
+            assert isinstance(target.ctx, ast.Store)
+            bs = compile(bs, t.value)
+            bs.code.add(isa.pop(registers.rax))
         #bs.code.add(isa.pop(registers.rdi))
         #bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
         #bs.code.add(isa.call(registers.rax))
@@ -174,8 +173,14 @@ def compile(bs, t):
         bs.code.add(isa.mov(registers.rax, t.n))
         bs.code.add(isa.push(registers.rax))
     elif isinstance(t, ast.Name):
-        bs.code.add(isa.mov(registers.rax, MemRef(registers.rbp, bs.function.get_var_loc(t.id))))
-        bs.code.add(isa.push(registers.rax))
+        if isinstance(t.ctx, ast.Load):
+            bs.code.add(isa.mov(registers.rax, MemRef(registers.rbp, bs.function.get_var_loc(t.id))))
+            bs.code.add(isa.push(registers.rax))
+        elif isinstance(t.ctx, ast.Store):
+            bs.code.add(isa.pop(registers.rax))
+            bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(t.id)), registers.rax))
+        else:
+            assert False, t.ctx
     elif isinstance(t, ast.If):
         b = object()
         c = object()
@@ -388,6 +393,8 @@ def compile(bs, t):
             bs.code.add(isa.pop(regs.pop()))
         functions[t.func.id].add_call(bs.code)
         bs.code.add(isa.push(registers.rax))
+    elif isinstance(t, ast.Tuple):
+            bs.code.add(isa.push(42))
     else:
         assert False, t
     if DEBUG and 0:
@@ -424,7 +431,13 @@ def add_root(tree):
 
 prerefs = {}
 refs = cdict(lambda k: prerefs.pop(k)())
+if sys.argv[1] == "--debug":
+    DEBUG = 1
+    sys.argv[1:] = sys.argv[2:]
+else:
+    DEBUG = 0
 tree = ast.parse(open(sys.argv[1]).read())
+
 #print tree
 #print dump(tree)
 #fadf
