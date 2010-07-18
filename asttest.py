@@ -79,7 +79,7 @@ class BlockStatus(object):
         self.code = self.program.get_stream()
     
     def finalise(self):
-        while True:
+        while False: #True:
             old = self.code
             res = self.program.get_stream()
             for i in xrange(len(old)):
@@ -151,20 +151,17 @@ def compile(bs, t):
         functions[t.name] = Function(t)
     elif isinstance(t, ast.AugAssign):
         bs = compile(bs, ast.Assign(targets=[t.target],
-            value=ast.BinOp(left=t.target, op=t.op, right=t.value)))
+            value=ast.BinOp(left=ast.Name(id=t.target, ctx=ast.Load()), op=t.op, right=t.value)))
     elif isinstance(t, ast.Assign):
-        bs = compile(bs, t.value)
+        bs = compile(bs, t.value) # pushes 1
         bs.code.add(isa.pop(registers.rax))
         for target in t.targets:
             bs.code.add(isa.push(registers.rax))
             bs.code.add(isa.push(registers.rax))
             assert isinstance(target, ast.Name)
             assert isinstance(target.ctx, ast.Store)
-            bs = compile(bs, t.value)
+            bs = compile(bs, target) # pops 1
             bs.code.add(isa.pop(registers.rax))
-        #bs.code.add(isa.pop(registers.rdi))
-        #bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
-        #bs.code.add(isa.call(registers.rax))
     elif isinstance(t, ast.Expr):
         bs = compile(bs, t.value)
         #bs.code.add(isa.add(registers.rsp, 8)) #
@@ -394,7 +391,8 @@ def compile(bs, t):
         functions[t.func.id].add_call(bs.code)
         bs.code.add(isa.push(registers.rax))
     elif isinstance(t, ast.Tuple):
-            bs.code.add(isa.push(42))
+        assert False
+        bs.code.add(isa.push(42))
     else:
         assert False, t
     if DEBUG and 0:
