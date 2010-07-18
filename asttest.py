@@ -151,7 +151,7 @@ def compile(bs, t):
         functions[t.name] = Function(t)
     elif isinstance(t, ast.AugAssign):
         bs = compile(bs, ast.Assign(targets=[t.target],
-            value=ast.BinOp(left=ast.Name(id=t.target, ctx=ast.Load()), op=t.op, right=t.value)))
+            value=ast.BinOp(left=ast.Name(id=t.target.id, ctx=ast.Load()), op=t.op, right=t.value)))
     elif isinstance(t, ast.Assign):
         bs = compile(bs, t.value) # pushes 1
         bs.code.add(isa.pop(registers.rax))
