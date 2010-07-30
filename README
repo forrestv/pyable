@@ -1,9 +1,15 @@
 REQUIREMENTS
+
 * greenlet (included - greenlet.so)
 * corepy (included with following patch applied)
 
+
 USAGE
+
 python asttest.py [--debug] <python file>
+
+Test files are included in test/
+
 
 COREPY PATCH
 
