@@ -1,0 +1,10 @@
+FOCUS
+
+each code fragment KNOWS the variables it uses' types
+operations that return variable types ... eg 
+
+handling integers
+we have int0, int1, int2, int3, int4, int5, int6, int7, ...
+each operation _must_ return the smallest one to fit it ... hmmm maybe cap lower at 4, lol
+
+for bigger ones, have immutable by reference

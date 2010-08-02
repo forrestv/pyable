@@ -77,6 +77,7 @@ class BlockStatus(object):
         self.function = function
         self.program = util.BareProgram()
         self.code = self.program.get_stream()
+        self.stack = []
     
     def finalise(self):
         while False: #True:
@@ -134,6 +135,32 @@ class _Function(object):
 
 functions = {}
 
+class Int(object):
+    def load_constant(self, value):
+        value = int(value)
+        return [
+            isa.mov(registers.rax, value),
+        ] + self.push()
+    def push(self):
+        return [
+            isa.push(registers.rax),
+        ]
+    def pop(self):
+        return [
+            isa.push(registers.rax),
+        ]
+    def neg(self):
+        return [
+            isa.neg(registers.rax),
+        ]
+    def add(self, other):
+        if isinstance(other, Integer):
+            blah
+        return NotImplemented
+
+class Object(object):
+    pass
+
 def compile(bs, t):
     if DEBUG and 0:
         bs.code.add(bs.program.get_label(str(t)))
@@ -143,39 +170,48 @@ def compile(bs, t):
             bs = compile(bs, x)
     elif isinstance(t, ast.Module):
         bs.function.emit_start(bs.code)
-        #bs.code.add(isa.mov(registers.rax, 1337332))
-        #bs.code.add(isa.push(registers.rax))
         bs = compile(bs, t.body)
         bs.function.emit_end(bs.code)
     elif isinstance(t, ast.FunctionDef):
         functions[t.name] = Function(t)
     elif isinstance(t, ast.AugAssign):
-        bs = compile(bs, ast.Assign(targets=[t.target],
-            value=ast.BinOp(left=ast.Name(id=t.target.id, ctx=ast.Load()), op=t.op, right=t.value)))
+        bs = compile(bs, ast.Assign(
+            targets=[t.target],
+            value=ast.BinOp(left=ast.Name(id=t.target.id, ctx=ast.Load()), op=t.op, right=t.value),
+        ))
     elif isinstance(t, ast.Assign):
         bs = compile(bs, t.value) # pushes 1
         bs.code.add(isa.pop(registers.rax))
+        rax_type = bs.stack.pop()
         for target in t.targets:
             bs.code.add(isa.push(registers.rax))
+            bs.stack.append(rax_type)
             bs.code.add(isa.push(registers.rax))
-            assert isinstance(target, ast.Name)
+            bs.stack.append(rax_type)
             assert isinstance(target.ctx, ast.Store)
-            bs = compile(bs, target) # pops 1
+            bs = compile(bs, target)
             bs.code.add(isa.pop(registers.rax))
+            rax_type = bs.stack.pop()
     elif isinstance(t, ast.Expr):
         bs = compile(bs, t.value)
         #bs.code.add(isa.add(registers.rsp, 8)) #
         bs.code.add(isa.pop(registers.rax))
+        rax_type = bs.stack.pop()
     elif isinstance(t, ast.Num):
         bs.code.add(isa.mov(registers.rax, t.n))
         bs.code.add(isa.push(registers.rax))
+        bs.stack.push(Integer)
     elif isinstance(t, ast.Name):
         if isinstance(t.ctx, ast.Load):
             bs.code.add(isa.mov(registers.rax, MemRef(registers.rbp, bs.function.get_var_loc(t.id))))
+            rax_type = bs.function.get_var_type(t.id)
             bs.code.add(isa.push(registers.rax))
+            bs.stack.append(rax_type)
         elif isinstance(t.ctx, ast.Store):
             bs.code.add(isa.pop(registers.rax))
+            rax_type = bs.stack.pop()
             bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(t.id)), registers.rax))
+            bs.function.set_var_type(t.id, rax_type)
         else:
             assert False, t.ctx
     elif isinstance(t, ast.If):
@@ -218,6 +254,8 @@ def compile(bs, t):
         
         bs = compile(bs, t.test)
         bs.code.add(isa.pop(registers.rax))
+        rax_type = bs.stack.pop()
+        assert isinstance(rax_type, Integer)
         bs.code.add(isa.test(registers.rax, registers.rax))
         skip = bs.program.get_unique_label()
         bs.code.add(isa.jz(skip))
@@ -240,6 +278,7 @@ def compile(bs, t):
                 bs = BlockStatus(orig_bs.function)
                 bs = compile(bs, t.test)
                 bs.code.add(isa.pop(registers.rax))
+                rax_type = bs.stack.pop()
                 bs.code.add(isa.test(registers.rax, registers.rax))
                 skip = bs.program.get_unique_label()
                 bs.code.add(isa.jz(skip))
@@ -307,10 +346,13 @@ def compile(bs, t):
         c, = t.comparators
         bs = compile(bs, c)
         bs.code.add(isa.pop(registers.rax))
+        rax_type = bs.stack.pop()
         bs.code.add(isa.pop(registers.rbx))
+        rbx_type = bs.stack.pop()
         bs.code.add(isa.cmp(registers.rbx, registers.rax))
         bs.code.add(isa.mov(registers.rax, 0))
         bs.code.add(isa.push(registers.rax))
+        bs.stack.append(Integer)
         label = bs.program.get_unique_label()
         if isinstance(op, ast.Lt):
             bs.code.add(isa.jge(label))
@@ -327,58 +369,69 @@ def compile(bs, t):
         else:
             assert False, op
         bs.code.add(isa.pop(registers.rax))
+        rax_type = bs.stack.pop()
         bs.code.add(isa.mov(registers.rax, 1))
         bs.code.add(isa.push(registers.rax))
+        bs.stack.append(Integer)
         bs.code.add(label)
     elif isinstance(t, ast.Print):
-        v, = t.values
-        bs = compile(bs, v)
-        bs.code.add(isa.pop(registers.rdi))
-        bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
-        bs.code.add(isa.call(registers.rax))
+        assert t.dest is None
+        for value in t.values:
+            bs = compile(bs, value)
+            bs.code.add(isa.pop(registers.rdi))
+            rdi_type = bs.stack.pop()
+            bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
+            bs.code.add(isa.call(registers.rax))
+        if t.nl:
+            bs.code.add(isa.mov(registers.rax, util.print_nl_addr))
+            bs.code.add(isa.call(registers.rax))
     elif isinstance(t, ast.UnaryOp):
         bs = compile(bs, t.operand)
         bs.code.add(isa.pop(registers.rax))
-        if isinstance(t.op, ast.USub):
+        rax_type = bs.stack.pop()
+        if isinstance(rax_type, Integer) and isinstance(t.op, ast.USub):
             bs.code.add(isa.neg(registers.rax))
         else:
             assert False, t.op
         bs.code.add(isa.push(registers.rax))
+        bs.stack.append(rax_type)
     elif isinstance(t, ast.BinOp):
         bs = compile(bs, t.right)
         bs = compile(bs, t.left)
         bs.code.add(isa.pop(registers.rax))
+        rax_type = bs.stack.pop()
         bs.code.add(isa.pop(registers.rbx))
-        if 0:
-            loop = bs.program.get_unique_label()
-            bs.code.add(isa.mov(registers.rdi, 1337331))
-            bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
-            bs.code.add(isa.call(registers.rax))
-            bs.code.add(isa.jmp(loop))
-            bs.code.add(loop)
-            bs.code.add(isa.pop(registers.rdi))
-            bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
-            bs.code.add(isa.call(registers.rax))
-            bs.code.add(isa.jmp(loop))
-        if isinstance(t.op, ast.Add):
-            bs.code.add(isa.add(registers.rax, registers.rbx))
-        elif isinstance(t.op, ast.Sub):
-            bs.code.add(isa.sub(registers.rax, registers.rbx))
-        elif isinstance(t.op, ast.Mult):
-            bs.code.add(isa.imul(registers.rax, registers.rbx))
-        elif isinstance(t.op, ast.Div):
-            bs.code.add(isa.mov(registers.rdx, 0))
-            bs.code.add(isa.idiv(registers.rbx))
-        elif isinstance(t.op, ast.FloorDiv):
-            bs.code.add(isa.mov(registers.rdx, 0))
-            bs.code.add(isa.idiv(registers.rbx))
-        elif isinstance(t.op, ast.Mod):
-            bs.code.add(isa.mov(registers.rdx, 0))
-            bs.code.add(isa.idiv(registers.rbx))
-            bs.code.add(isa.mov(registers.rax, registers.rdx))
+        rbx_type = bs.stack.pop()
+        if 1:
+            if isinstance(t.op, ast.Add):
+                bs.code.add(isa.add(registers.rax, registers.rbx))
+            elif isinstance(t.op, ast.Sub):
+                bs.code.add(isa.sub(registers.rax, registers.rbx))
+            elif isinstance(t.op, ast.Mult):
+                bs.code.add(isa.imul(registers.rax, registers.rbx))
+            elif isinstance(t.op, ast.Div):
+                bs.code.add(isa.mov(registers.rdx, 0))
+                bs.code.add(isa.idiv(registers.rbx))
+            elif isinstance(t.op, ast.FloorDiv):
+                bs.code.add(isa.mov(registers.rdx, 0))
+                bs.code.add(isa.idiv(registers.rbx))
+            elif isinstance(t.op, ast.Mod):
+                bs.code.add(isa.mov(registers.rdx, 0))
+                bs.code.add(isa.idiv(registers.rbx))
+                bs.code.add(isa.mov(registers.rax, registers.rdx))
+            else:
+                assert False, t.op
         else:
-            assert False, t.op
+            if isinstance(t.op, ast.Add): r = (rax_type + rbx_type)
+            elif isinstance(t.op, ast.Sub): r = (rax_type - rbx_type)
+            elif isinstance(t.op, ast.Mult): r = (rax_type - rbx_type)
+            elif isinstance(t.op, ast.Div): r = (rax_type / rbx_type)
+            elif isinstance(t.op, ast.FloorDiv): r = (rax_type // rbx_type)
+            elif isinstance(t.op, ast.Mult): r = (rax_type % rbx_type)
+            else: assert False
+            rax_type = r(bs)
         bs.code.add(isa.push(registers.rax))
+        bs.stack.append(rax_type)
     elif isinstance(t, ast.Call):
         assert not t.keywords
         assert not t.starargs
@@ -388,11 +441,53 @@ def compile(bs, t):
         regs = [registers.rdi, registers.rsi, registers.rdx, registers.rcx][:len(t.args)]
         for arg in t.args:
             bs.code.add(isa.pop(regs.pop()))
+            rax_type = bs.stack.pop() # XXX not rax
         functions[t.func.id].add_call(bs.code)
         bs.code.add(isa.push(registers.rax))
+        bs.stack.append(rax_type)
     elif isinstance(t, ast.Tuple):
-        assert False
-        bs.code.add(isa.push(42))
+        if isinstance(t.ctx, ast.Load):
+            for elt in t.elts:
+                bs = compile(bs, elt)
+            
+            bs.code.add(isa.mov(registers.rdi, 8*len(t.elts)))
+            bs.code.add(isa.mov(registers.rax, util.malloc_addr))
+            bs.code.add(isa.call(registers.rax))
+            
+            for i, elt in reversed(list(enumerate(t.elts))):
+                bs.code.add(isa.pop(MemRef(registers.rax, 8*i)))
+            
+            bs.code.add(isa.push(registers.rax))
+            bs.stack.append(rax_type)
+        elif isinstance(t.ctx, ast.Store):
+            isa.pop(registers.rax)
+            rax_type = bs.stack.pop()
+            
+            for i, elt in reversed(list(enumerate(t.elts))):
+                bs.code.add(isa.push(MemRef(registers.rax, 8*i)))
+                bs.stack.append(Integer) # XXX
+            
+            for elt in t.elts:
+                assert isinstance(elt, ast.Name)
+                assert isinstance(elt.ctx, ast.Store), elt.ctx
+                bs = compile(bs, elt)
+        else:
+            assert False, t.ctx
+    elif isinstance(t, ast.Subscript):
+        if isinstance(t.ctx, ast.Load):
+            bs = compile(bs, t.value)
+            
+            isa.pop(registers.rax)
+            rax_type = bs.stack.pop()
+            
+            bs.code.add(isa.push(MemRef(registers.rax, 8 * t.slice.value.n)))
+        elif isinstance(t.ctx, ast.Store):
+            assert False
+            bs.code.add(isa.pop(registers.rax))
+            rax_type = bs.stack.pop()
+            bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(t.id)), registers.rax))
+        else:
+            assert False, t.ctx
     else:
         assert False, t
     if DEBUG and 0:

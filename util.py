@@ -123,9 +123,17 @@ class Redirection(object):
 
 @called_from_asm
 def print_int64(i):
-    print i
+    print i,
 print_int64_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64)(print_int64)
 print_int64_addr = ctypes.cast(print_int64_cfunc, ctypes.c_void_p).value
+
+@called_from_asm
+def print_nl():
+    print
+print_nl_cfunc = ctypes.CFUNCTYPE(None)(print_nl)
+print_nl_addr = ctypes.cast(print_nl_cfunc, ctypes.c_void_p).value
+
+malloc_addr = ctypes.cast(ctypes.CDLL("libc.so.6").malloc, ctypes.c_void_p).value
 
 if __name__ == "__main__":
     ran = False

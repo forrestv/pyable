@@ -1,7 +1,11 @@
 a = b = 1
 
-while True:
-    a, b = b, a + b
+while a < 1000000000000000:
     print a
     print b
-    print
+    print (a, b)[0]
+    print (a, b)[1]
+    print (b, a)[1]
+    print (b, a)[0]
+    a, b = b, a + b
+    print -1
