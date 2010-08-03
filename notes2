@@ -5,6 +5,10 @@ operations that return variable types ... eg
 
 handling integers
 we have int0, int1, int2, int3, int4, int5, int6, int7, ...
-each operation _must_ return the smallest one to fit it ... hmmm maybe cap lower at 4, lol
+each operation _must_ return the smallest one to fit it ... hmmm maybe cap lower at 8 and multiples of 8
 
 for bigger ones, have immutable by reference
+
+IMPORTANT
+
+have each function have multiple return points depending on the type

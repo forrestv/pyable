@@ -55,6 +55,7 @@ class Function(object):
     def __init__(self, space):
         self.space = space
         self.vars = {}
+        self.var_types = {}
     def emit_start(self, code):
         code.add(isa.enter(self.space * 8, 0))
     def emit_end(self, code):
@@ -69,6 +70,10 @@ class Function(object):
                 raise MemoryError
             self.vars[name] = len(self.vars)* 8
             return self.get_var_loc(name)
+    def set_var_type(self, name, type):
+        self.var_types[name] = type
+    def get_var_type(self, name):
+        return self.var_types[name]
 
 class BlockStatus(object):
     def __init__(self, function=None):
@@ -154,9 +159,13 @@ class Int(object):
             isa.neg(registers.rax),
         ]
     def add(self, other):
-        if isinstance(other, Integer):
+        if isinstance(other, Int):
             blah
         return NotImplemented
+
+class Tuple(object):
+    def load_constant(self, ast):
+        assert isinstance(ast, 
 
 class Object(object):
     pass
@@ -200,7 +209,7 @@ def compile(bs, t):
     elif isinstance(t, ast.Num):
         bs.code.add(isa.mov(registers.rax, t.n))
         bs.code.add(isa.push(registers.rax))
-        bs.stack.push(Integer)
+        bs.stack.append(Int())
     elif isinstance(t, ast.Name):
         if isinstance(t.ctx, ast.Load):
             bs.code.add(isa.mov(registers.rax, MemRef(registers.rbp, bs.function.get_var_loc(t.id))))
@@ -255,7 +264,7 @@ def compile(bs, t):
         bs = compile(bs, t.test)
         bs.code.add(isa.pop(registers.rax))
         rax_type = bs.stack.pop()
-        assert isinstance(rax_type, Integer)
+        assert isinstance(rax_type, Int)
         bs.code.add(isa.test(registers.rax, registers.rax))
         skip = bs.program.get_unique_label()
         bs.code.add(isa.jz(skip))
@@ -352,7 +361,7 @@ def compile(bs, t):
         bs.code.add(isa.cmp(registers.rbx, registers.rax))
         bs.code.add(isa.mov(registers.rax, 0))
         bs.code.add(isa.push(registers.rax))
-        bs.stack.append(Integer)
+        bs.stack.append(Int)
         label = bs.program.get_unique_label()
         if isinstance(op, ast.Lt):
             bs.code.add(isa.jge(label))
@@ -372,7 +381,7 @@ def compile(bs, t):
         rax_type = bs.stack.pop()
         bs.code.add(isa.mov(registers.rax, 1))
         bs.code.add(isa.push(registers.rax))
-        bs.stack.append(Integer)
+        bs.stack.append(Int)
         bs.code.add(label)
     elif isinstance(t, ast.Print):
         assert t.dest is None
@@ -389,7 +398,7 @@ def compile(bs, t):
         bs = compile(bs, t.operand)
         bs.code.add(isa.pop(registers.rax))
         rax_type = bs.stack.pop()
-        if isinstance(rax_type, Integer) and isinstance(t.op, ast.USub):
+        if isinstance(rax_type, Int) and isinstance(t.op, ast.USub):
             bs.code.add(isa.neg(registers.rax))
         else:
             assert False, t.op
@@ -465,7 +474,7 @@ def compile(bs, t):
             
             for i, elt in reversed(list(enumerate(t.elts))):
                 bs.code.add(isa.push(MemRef(registers.rax, 8*i)))
-                bs.stack.append(Integer) # XXX
+                bs.stack.append(Int) # XXX
             
             for elt in t.elts:
                 assert isinstance(elt, ast.Name)
