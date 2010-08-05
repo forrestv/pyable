@@ -165,360 +165,365 @@ class Int(object):
 
 class Tuple(object):
     def load_constant(self, ast):
-        assert isinstance(ast, 
+        assert isinstance(ast)
 
 class Object(object):
     pass
 
-def compile(bs, t):
-    if DEBUG and 0:
-        bs.code.add(bs.program.get_label(str(t)))
-        print "stat" + str(t)
-    if isinstance(t, list):
-        for x in t:
-            bs = compile(bs, x)
-    elif isinstance(t, ast.Module):
-        bs.function.emit_start(bs.code)
-        bs = compile(bs, t.body)
-        bs.function.emit_end(bs.code)
-    elif isinstance(t, ast.FunctionDef):
-        functions[t.name] = Function(t)
-    elif isinstance(t, ast.AugAssign):
-        bs = compile(bs, ast.Assign(
-            targets=[t.target],
-            value=ast.BinOp(left=ast.Name(id=t.target.id, ctx=ast.Load()), op=t.op, right=t.value),
-        ))
-    elif isinstance(t, ast.Assign):
-        bs = compile(bs, t.value) # pushes 1
-        bs.code.add(isa.pop(registers.rax))
-        rax_type = bs.stack.pop()
-        for target in t.targets:
-            bs.code.add(isa.push(registers.rax))
-            bs.stack.append(rax_type)
-            bs.code.add(isa.push(registers.rax))
-            bs.stack.append(rax_type)
-            assert isinstance(target.ctx, ast.Store)
-            bs = compile(bs, target)
-            bs.code.add(isa.pop(registers.rax))
-            rax_type = bs.stack.pop()
-    elif isinstance(t, ast.Expr):
-        bs = compile(bs, t.value)
-        #bs.code.add(isa.add(registers.rsp, 8)) #
-        bs.code.add(isa.pop(registers.rax))
-        rax_type = bs.stack.pop()
-    elif isinstance(t, ast.Num):
-        bs.code.add(isa.mov(registers.rax, t.n))
-        bs.code.add(isa.push(registers.rax))
-        bs.stack.append(Int())
-    elif isinstance(t, ast.Name):
-        if isinstance(t.ctx, ast.Load):
-            bs.code.add(isa.mov(registers.rax, MemRef(registers.rbp, bs.function.get_var_loc(t.id))))
-            rax_type = bs.function.get_var_type(t.id)
-            bs.code.add(isa.push(registers.rax))
-            bs.stack.append(rax_type)
-        elif isinstance(t.ctx, ast.Store):
-            bs.code.add(isa.pop(registers.rax))
-            rax_type = bs.stack.pop()
-            bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(t.id)), registers.rax))
-            bs.function.set_var_type(t.id, rax_type)
+def memoize(f):
+    def get(result=[]):
+        if not result:
+            result.append(f())
+        return result[0]
+    return get
+
+def compile(bs, stack):
+    while True:
+        this = []
+        if stack:
+            t = stack.pop()
         else:
-            assert False, t.ctx
-    elif isinstance(t, ast.If):
-        b = object()
-        c = object()
-        def make_b(caller):
-            if b in refs:
-                p = refs[b]
-            else:
-                if DEBUG:
-                    print "make_b if"
-                bs = BlockStatus(a_bs.function)
-                bs = compile_wrap(bs, t.body)
-                util.Redirection(bs.code, make_c)
-                p = bs.finalise()
-                blocks.append(p)
-                refs[b] = p
-                if DEBUG:
-                    print "addr", hex(p.inst_addr())
-                    p.print_code()
-                #printer.PrintInstructionStream(bs.code, printer.x86_64_Nasm(function_name="foobar"))
-            caller.replace(util.get_jmp(p.inst_addr()))
-        def make_c(caller):
-            if c in refs:
-                p = refs[c]
-            else:
-                if DEBUG:
-                    print "make_c if"
-                bs = BlockStatus(a_bs.function)
-                bs = g.switch(bs)
-                p = bs.finalise()
-                blocks.append(p)
-                refs[c] = p
-                if DEBUG:
-                    print "addr", hex(p.inst_addr())
-                    p.print_code()
-            caller.replace(util.get_jmp(p.inst_addr()))
-        
-        a_bs = bs
-        
-        bs = compile(bs, t.test)
-        bs.code.add(isa.pop(registers.rax))
-        rax_type = bs.stack.pop()
-        assert isinstance(rax_type, Int)
-        bs.code.add(isa.test(registers.rax, registers.rax))
-        skip = bs.program.get_unique_label()
-        bs.code.add(isa.jz(skip))
-        util.Redirection(bs.code, make_b)
-        bs.code.add(skip)
-        util.Redirection(bs.code, make_c)
-        
-        g = greenlet.getcurrent() # save current for make_c
-        bs = g.parent.switch(bs) # return, with results in res
-    elif isinstance(t, ast.While):
-        a = object()
-        b = object()
-        c = object()
-        def make_a(caller):
-            if a in refs:
-                p = refs[a]
-            else:
-                if DEBUG:
-                    print "make_a"
-                bs = BlockStatus(orig_bs.function)
-                bs = compile(bs, t.test)
+            t = None
+        if t is None:
+                return bs
+        elif callable(t):
+            t()
+        elif isinstance(t, list):
+            assert not this
+            this = t
+        elif isinstance(t, ast.Module):
+            bs.function.emit_start(bs.code)
+            this.append(t.body)
+            this.append(lambda: bs.function.emit_end(bs.code))
+        elif isinstance(t, ast.FunctionDef):
+            functions[t.name] = Function(t)
+        elif isinstance(t, ast.AugAssign):
+            this.append(ast.Assign(
+                targets=[t.target],
+                value=ast.BinOp(left=ast.Name(id=t.target.id, ctx=ast.Load()), op=t.op, right=t.value),
+            ))
+        elif isinstance(t, ast.Assign):
+            this.append(t.value) # pushes 1
+            @this.append
+            def _(t=t):
                 bs.code.add(isa.pop(registers.rax))
                 rax_type = bs.stack.pop()
+                for target in t.targets:
+                    assert isinstance(target.ctx, ast.Store)
+                    
+                    @this.append
+                    def _():
+                        bs.code.add(isa.push(registers.rax))
+                        bs.stack.append(rax_type)
+                        bs.code.add(isa.push(registers.rax))
+                        bs.stack.append(rax_type)
+                    
+                    this.append(target)
+                    
+                    @this.append
+                    def _():
+                        bs.code.add(isa.pop(registers.rax))
+                        rax_type = bs.stack.pop()
+        elif isinstance(t, ast.Expr):
+            this.append(t.value)
+            @this.append
+            def _(t=t):
+                bs.code.add(isa.pop(registers.rax))
+                rax_type = bs.stack.pop()
+        elif isinstance(t, ast.Num):
+            bs.code.add(isa.mov(registers.rax, t.n))
+            bs.code.add(isa.push(registers.rax))
+            bs.stack.append(Int())
+        elif isinstance(t, ast.Name):
+            if isinstance(t.ctx, ast.Load):
+                bs.code.add(isa.mov(registers.rax, MemRef(registers.rbp, bs.function.get_var_loc(t.id))))
+                rax_type = bs.function.get_var_type(t.id)
+                bs.code.add(isa.push(registers.rax))
+                bs.stack.append(rax_type)
+            elif isinstance(t.ctx, ast.Store):
+                bs.code.add(isa.pop(registers.rax))
+                rax_type = bs.stack.pop()
+                bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(t.id)), registers.rax))
+                bs.function.set_var_type(t.id, rax_type)
+            else:
+                assert False, t.ctx
+        elif isinstance(t, ast.If):
+            @memoize
+            def make_b(t=t):
+                bs = BlockStatus(a_bs.function)
+                compile(bs, t.body)
+                util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c())))
+                p = bs.finalise()
+                blocks.append(p)
+                if DEBUG:
+                    print "if_b", hex(p.inst_addr())
+                    p.print_code()
+                return p.inst_addr()
+            @memoize
+            def make_c(t=t, stack=stack):
+                bs = BlockStatus(a_bs.function)
+                compile(bs, stack)
+                p = bs.finalise()
+                blocks.append(p)
+                if DEBUG:
+                    print "if_c", hex(p.inst_addr())
+                    p.print_code()
+                return p.inst_addr()
+            
+            a_bs = bs
+            
+            this.append(t.test)
+            @this.append
+            def _():
+                bs.code.add(isa.pop(registers.rax))
+                rax_type = bs.stack.pop()
+                assert isinstance(rax_type, Int), (rax_type, Int)
                 bs.code.add(isa.test(registers.rax, registers.rax))
                 skip = bs.program.get_unique_label()
                 bs.code.add(isa.jz(skip))
-                util.Redirection(bs.code, make_b)
+                util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_b())))
                 bs.code.add(skip)
-                util.Redirection(bs.code, make_c)
-                p = bs.finalise()
-                blocks.append(p)
-                refs[a] = p
-                if DEBUG:
-                    p.print_code()
-            caller.replace(util.get_jmp(p.inst_addr()))
+                util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c())))
+            this.append(None)
+        elif isinstance(t, ast.While):
+            a = object()
+            b = object()
+            c = object()
+            def make_a(caller):
+                if a in refs:
+                    p = refs[a]
+                else:
+                    if DEBUG:
+                        print "make_a"
+                    bs = BlockStatus(orig_bs.function)
+                    bs = compile(bs, t.test)
+                    bs.code.add(isa.pop(registers.rax))
+                    rax_type = bs.stack.pop()
+                    bs.code.add(isa.test(registers.rax, registers.rax))
+                    skip = bs.program.get_unique_label()
+                    bs.code.add(isa.jz(skip))
+                    util.Redirection(bs.code, make_b)
+                    bs.code.add(skip)
+                    util.Redirection(bs.code, make_c)
+                    p = bs.finalise()
+                    blocks.append(p)
+                    refs[a] = p
+                    if DEBUG:
+                        p.print_code()
+                caller.replace(util.get_jmp(p.inst_addr()))
 
-        def really_make_b(bs, t):
-                bs = compile(bs, t)
-                util.Redirection(bs.code, make_a)
-                return bs
-        def make_b(caller):
-            if b in refs:
-                p = refs[b]
-            else:
-                if DEBUG:
-                    print "make_b while"
-                bs = BlockStatus(orig_bs.function)
-                bs = compile_wrap(bs, t.body, really_make_b)
-                if DEBUG and 0:
-                    for i in xrange(10):
-                        print "nom",t.body
-                p = bs.finalise()
-                blocks.append(p)
-                refs[b] = p
-                if DEBUG:
-                    print "addr", hex(p.inst_addr())
-                    p.print_code(hex=True)
-                #printer.PrintInstructionStream(bs.code, printer.x86_64_Nasm(function_name="foobar"))
-            caller.replace(util.get_jmp(p.inst_addr()))
-        def make_c(caller):
-            if c in refs:
-                p = refs[c]
-            else:
-                if DEBUG:
-                    print "make_c while"
-                bs = BlockStatus(orig_bs.function)
-                bs = g.switch(bs)
-                p = bs.finalise()
-                blocks.append(p)
-                refs[c] = p
-                if DEBUG:
-                    print "addr", hex(p.inst_addr())
-                    p.print_code()
-            caller.replace(util.get_jmp(p.inst_addr()))
-        
-        orig_bs = bs
-        
-        util.Redirection(bs.code, make_a)
-        g = greenlet.getcurrent() # save current for make_c
-        bs = g.parent.switch(bs) # return, with results in res
-        if DEBUG and 0:
-            print "HI"
-            print dump(t)
-            print "ENDHI"
-    elif isinstance(t, ast.Compare):
-        bs = compile(bs, t.left)
-        op, = t.ops
-        c, = t.comparators
-        bs = compile(bs, c)
-        bs.code.add(isa.pop(registers.rax))
-        rax_type = bs.stack.pop()
-        bs.code.add(isa.pop(registers.rbx))
-        rbx_type = bs.stack.pop()
-        bs.code.add(isa.cmp(registers.rbx, registers.rax))
-        bs.code.add(isa.mov(registers.rax, 0))
-        bs.code.add(isa.push(registers.rax))
-        bs.stack.append(Int)
-        label = bs.program.get_unique_label()
-        if isinstance(op, ast.Lt):
-            bs.code.add(isa.jge(label))
-        elif isinstance(op, ast.Gt):
-            bs.code.add(isa.jle(label))
-        elif isinstance(op, ast.LtE):
-            bs.code.add(isa.jg(label))
-        elif isinstance(op, ast.GtE):
-            bs.code.add(isa.jl(label))
-        elif isinstance(op, ast.Eq):
-            bs.code.add(isa.jne(label))
-        elif isinstance(op, ast.NotEq):
-            bs.code.add(isa.je(label))
-        else:
-            assert False, op
-        bs.code.add(isa.pop(registers.rax))
-        rax_type = bs.stack.pop()
-        bs.code.add(isa.mov(registers.rax, 1))
-        bs.code.add(isa.push(registers.rax))
-        bs.stack.append(Int)
-        bs.code.add(label)
-    elif isinstance(t, ast.Print):
-        assert t.dest is None
-        for value in t.values:
-            bs = compile(bs, value)
-            bs.code.add(isa.pop(registers.rdi))
-            rdi_type = bs.stack.pop()
-            bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
-            bs.code.add(isa.call(registers.rax))
-        if t.nl:
-            bs.code.add(isa.mov(registers.rax, util.print_nl_addr))
-            bs.code.add(isa.call(registers.rax))
-    elif isinstance(t, ast.UnaryOp):
-        bs = compile(bs, t.operand)
-        bs.code.add(isa.pop(registers.rax))
-        rax_type = bs.stack.pop()
-        if isinstance(rax_type, Int) and isinstance(t.op, ast.USub):
-            bs.code.add(isa.neg(registers.rax))
-        else:
-            assert False, t.op
-        bs.code.add(isa.push(registers.rax))
-        bs.stack.append(rax_type)
-    elif isinstance(t, ast.BinOp):
-        bs = compile(bs, t.right)
-        bs = compile(bs, t.left)
-        bs.code.add(isa.pop(registers.rax))
-        rax_type = bs.stack.pop()
-        bs.code.add(isa.pop(registers.rbx))
-        rbx_type = bs.stack.pop()
-        if 1:
-            if isinstance(t.op, ast.Add):
-                bs.code.add(isa.add(registers.rax, registers.rbx))
-            elif isinstance(t.op, ast.Sub):
-                bs.code.add(isa.sub(registers.rax, registers.rbx))
-            elif isinstance(t.op, ast.Mult):
-                bs.code.add(isa.imul(registers.rax, registers.rbx))
-            elif isinstance(t.op, ast.Div):
-                bs.code.add(isa.mov(registers.rdx, 0))
-                bs.code.add(isa.idiv(registers.rbx))
-            elif isinstance(t.op, ast.FloorDiv):
-                bs.code.add(isa.mov(registers.rdx, 0))
-                bs.code.add(isa.idiv(registers.rbx))
-            elif isinstance(t.op, ast.Mod):
-                bs.code.add(isa.mov(registers.rdx, 0))
-                bs.code.add(isa.idiv(registers.rbx))
-                bs.code.add(isa.mov(registers.rax, registers.rdx))
-            else:
-                assert False, t.op
-        else:
-            if isinstance(t.op, ast.Add): r = (rax_type + rbx_type)
-            elif isinstance(t.op, ast.Sub): r = (rax_type - rbx_type)
-            elif isinstance(t.op, ast.Mult): r = (rax_type - rbx_type)
-            elif isinstance(t.op, ast.Div): r = (rax_type / rbx_type)
-            elif isinstance(t.op, ast.FloorDiv): r = (rax_type // rbx_type)
-            elif isinstance(t.op, ast.Mult): r = (rax_type % rbx_type)
-            else: assert False
-            rax_type = r(bs)
-        bs.code.add(isa.push(registers.rax))
-        bs.stack.append(rax_type)
-    elif isinstance(t, ast.Call):
-        assert not t.keywords
-        assert not t.starargs
-        assert not t.kwargs
-        for arg in t.args:
-            bs = compile(bs, arg)
-        regs = [registers.rdi, registers.rsi, registers.rdx, registers.rcx][:len(t.args)]
-        for arg in t.args:
-            bs.code.add(isa.pop(regs.pop()))
-            rax_type = bs.stack.pop() # XXX not rax
-        functions[t.func.id].add_call(bs.code)
-        bs.code.add(isa.push(registers.rax))
-        bs.stack.append(rax_type)
-    elif isinstance(t, ast.Tuple):
-        if isinstance(t.ctx, ast.Load):
-            for elt in t.elts:
-                bs = compile(bs, elt)
+            def really_make_b(bs, t):
+                    bs = compile(bs, t)
+                    util.Redirection(bs.code, make_a)
+                    return bs
+            def make_b(caller):
+                if b in refs:
+                    p = refs[b]
+                else:
+                    if DEBUG:
+                        print "make_b while"
+                    bs = BlockStatus(orig_bs.function)
+                    bs = compile_wrap(bs, t.body, really_make_b)
+                    if DEBUG and 0:
+                        for i in xrange(10):
+                            print "nom",t.body
+                    p = bs.finalise()
+                    blocks.append(p)
+                    refs[b] = p
+                    if DEBUG:
+                        print "addr", hex(p.inst_addr())
+                        p.print_code(hex=True)
+                    #printer.PrintInstructionStream(bs.code, printer.x86_64_Nasm(function_name="foobar"))
+                caller.replace(util.get_jmp(p.inst_addr()))
+            def make_c(caller):
+                if c in refs:
+                    p = refs[c]
+                else:
+                    if DEBUG:
+                        print "make_c while"
+                    bs = BlockStatus(orig_bs.function)
+                    bs = g.switch(bs)
+                    p = bs.finalise()
+                    blocks.append(p)
+                    refs[c] = p
+                    if DEBUG:
+                        print "addr", hex(p.inst_addr())
+                        p.print_code()
+                caller.replace(util.get_jmp(p.inst_addr()))
             
-            bs.code.add(isa.mov(registers.rdi, 8*len(t.elts)))
-            bs.code.add(isa.mov(registers.rax, util.malloc_addr))
-            bs.code.add(isa.call(registers.rax))
+            orig_bs = bs
             
-            for i, elt in reversed(list(enumerate(t.elts))):
-                bs.code.add(isa.pop(MemRef(registers.rax, 8*i)))
-            
+            util.Redirection(bs.code, make_a)
+            g = greenlet.getcurrent() # save current for make_c
+            bs = g.parent.switch(bs) # return, with results in res
+            if DEBUG and 0:
+                print "HI"
+                print dump(t)
+                print "ENDHI"
+        elif isinstance(t, ast.Compare):
+            assert len(t.ops) == 1 and len(t.comparators) == 1
+            this.append(t.left)
+            this.append(t.comparators[0])
+            @this.append
+            def _(t=t):
+                op = t.ops[0]
+                bs.code.add(isa.pop(registers.rax))
+                rax_type = bs.stack.pop()
+                bs.code.add(isa.pop(registers.rbx))
+                rbx_type = bs.stack.pop()
+                bs.code.add(isa.cmp(registers.rbx, registers.rax))
+                bs.code.add(isa.mov(registers.rax, 0))
+                bs.code.add(isa.push(registers.rax))
+                bs.stack.append(Int())
+                label = bs.program.get_unique_label()
+                if isinstance(op, ast.Lt):
+                    bs.code.add(isa.jge(label))
+                elif isinstance(op, ast.Gt):
+                    bs.code.add(isa.jle(label))
+                elif isinstance(op, ast.LtE):
+                    bs.code.add(isa.jg(label))
+                elif isinstance(op, ast.GtE):
+                    bs.code.add(isa.jl(label))
+                elif isinstance(op, ast.Eq):
+                    bs.code.add(isa.jne(label))
+                elif isinstance(op, ast.NotEq):
+                    bs.code.add(isa.je(label))
+                else:
+                    assert False, op
+                bs.code.add(isa.pop(registers.rax))
+                rax_type = bs.stack.pop()
+                bs.code.add(isa.mov(registers.rax, 1))
+                bs.code.add(isa.push(registers.rax))
+                bs.stack.append(Int())
+                bs.code.add(label)
+        elif isinstance(t, ast.Print):
+            assert t.dest is None
+            for value in t.values:
+                this.append(value)
+                @this.append
+                def _():
+                    bs.code.add(isa.pop(registers.rdi))
+                    rdi_type = bs.stack.pop()
+                    assert isinstance(rdi_type, Int), "can only print ints"
+                    bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
+                    bs.code.add(isa.call(registers.rax))
+            if t.nl:
+                @this.append
+                def _():
+                    bs.code.add(isa.mov(registers.rax, util.print_nl_addr))
+                    bs.code.add(isa.call(registers.rax))
+        elif isinstance(t, ast.UnaryOp):
+            this.append(t.operand)
+            @this.append
+            def _(t=t):
+                bs.code.add(isa.pop(registers.rax))
+                rax_type = bs.stack.pop()
+                if isinstance(rax_type, Int) and isinstance(t.op, ast.USub):
+                    bs.code.add(isa.neg(registers.rax))
+                else:
+                    assert False, t.op
+                bs.code.add(isa.push(registers.rax))
+                bs.stack.append(rax_type)
+        elif isinstance(t, ast.BinOp):
+            this.append(t.right)
+            this.append(t.left)
+            @this.append
+            def _(t=t):
+                bs.code.add(isa.pop(registers.rax))
+                rax_type = bs.stack.pop()
+                bs.code.add(isa.pop(registers.rbx))
+                rbx_type = bs.stack.pop()
+                if 1:
+                    if isinstance(t.op, ast.Add):
+                        bs.code.add(isa.add(registers.rax, registers.rbx))
+                    elif isinstance(t.op, ast.Sub):
+                        bs.code.add(isa.sub(registers.rax, registers.rbx))
+                    elif isinstance(t.op, ast.Mult):
+                        bs.code.add(isa.imul(registers.rax, registers.rbx))
+                    elif isinstance(t.op, ast.Div):
+                        bs.code.add(isa.mov(registers.rdx, 0))
+                        bs.code.add(isa.idiv(registers.rbx))
+                    elif isinstance(t.op, ast.FloorDiv):
+                        bs.code.add(isa.mov(registers.rdx, 0))
+                        bs.code.add(isa.idiv(registers.rbx))
+                    elif isinstance(t.op, ast.Mod):
+                        bs.code.add(isa.mov(registers.rdx, 0))
+                        bs.code.add(isa.idiv(registers.rbx))
+                        bs.code.add(isa.mov(registers.rax, registers.rdx))
+                    else:
+                        assert False, t.op
+                else:
+                    if isinstance(t.op, ast.Add): r = (rax_type + rbx_type)
+                    elif isinstance(t.op, ast.Sub): r = (rax_type - rbx_type)
+                    elif isinstance(t.op, ast.Mult): r = (rax_type - rbx_type)
+                    elif isinstance(t.op, ast.Div): r = (rax_type / rbx_type)
+                    elif isinstance(t.op, ast.FloorDiv): r = (rax_type // rbx_type)
+                    elif isinstance(t.op, ast.Mult): r = (rax_type % rbx_type)
+                    else: assert False
+                    rax_type = r(bs)
+                bs.code.add(isa.push(registers.rax))
+                bs.stack.append(rax_type)
+        elif isinstance(t, ast.Call) and 0:
+            assert not t.keywords
+            assert not t.starargs
+            assert not t.kwargs
+            for arg in t.args:
+                bs = compile(bs, arg)
+            regs = [registers.rdi, registers.rsi, registers.rdx, registers.rcx][:len(t.args)]
+            for arg in t.args:
+                bs.code.add(isa.pop(regs.pop()))
+                rax_type = bs.stack.pop() # XXX not rax
+            functions[t.func.id].add_call(bs.code)
             bs.code.add(isa.push(registers.rax))
             bs.stack.append(rax_type)
-        elif isinstance(t.ctx, ast.Store):
-            isa.pop(registers.rax)
-            rax_type = bs.stack.pop()
-            
-            for i, elt in reversed(list(enumerate(t.elts))):
-                bs.code.add(isa.push(MemRef(registers.rax, 8*i)))
-                bs.stack.append(Int) # XXX
-            
-            for elt in t.elts:
-                assert isinstance(elt, ast.Name)
-                assert isinstance(elt.ctx, ast.Store), elt.ctx
-                bs = compile(bs, elt)
+        elif isinstance(t, ast.Tuple) and 0:
+            if isinstance(t.ctx, ast.Load):
+                for elt in t.elts:
+                    bs = compile(bs, elt)
+                
+                bs.code.add(isa.mov(registers.rdi, 8*len(t.elts)))
+                bs.code.add(isa.mov(registers.rax, util.malloc_addr))
+                bs.code.add(isa.call(registers.rax))
+                
+                for i, elt in reversed(list(enumerate(t.elts))):
+                    bs.code.add(isa.pop(MemRef(registers.rax, 8*i)))
+                
+                bs.code.add(isa.push(registers.rax))
+                bs.stack.append(rax_type)
+            elif isinstance(t.ctx, ast.Store):
+                isa.pop(registers.rax)
+                rax_type = bs.stack.pop()
+                
+                for i, elt in reversed(list(enumerate(t.elts))):
+                    bs.code.add(isa.push(MemRef(registers.rax, 8*i)))
+                    bs.stack.append(Int) # XXX
+                
+                for elt in t.elts:
+                    assert isinstance(elt, ast.Name)
+                    assert isinstance(elt.ctx, ast.Store), elt.ctx
+                    bs = compile(bs, elt)
+            else:
+                assert False, t.ctx
+        elif isinstance(t, ast.Subscript) and 0:
+            if isinstance(t.ctx, ast.Load):
+                bs = compile(bs, t.value)
+                
+                isa.pop(registers.rax)
+                rax_type = bs.stack.pop()
+                
+                bs.code.add(isa.push(MemRef(registers.rax, 8 * t.slice.value.n)))
+            elif isinstance(t.ctx, ast.Store):
+                assert False
+                bs.code.add(isa.pop(registers.rax))
+                rax_type = bs.stack.pop()
+                bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(t.id)), registers.rax))
+            else:
+                assert False, t.ctx
         else:
-            assert False, t.ctx
-    elif isinstance(t, ast.Subscript):
-        if isinstance(t.ctx, ast.Load):
-            bs = compile(bs, t.value)
-            
-            isa.pop(registers.rax)
-            rax_type = bs.stack.pop()
-            
-            bs.code.add(isa.push(MemRef(registers.rax, 8 * t.slice.value.n)))
-        elif isinstance(t.ctx, ast.Store):
-            assert False
-            bs.code.add(isa.pop(registers.rax))
-            rax_type = bs.stack.pop()
-            bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(t.id)), registers.rax))
-        else:
-            assert False, t.ctx
-    else:
-        assert False, t
-    if DEBUG and 0:
-        bs.code.add(bs.program.get_label("end " + str(t)))
-        print "end" + str(t)
-    return bs
+            assert False, t
+        stack.extend(reversed(this))
 
-def compile_wrap(bs, t, f=compile):
-    g = greenlet.greenlet(f)
-    return g.switch(bs, t)
-'''
-res = compile_wrap(tree)
-print res
-make_a = res[2][1]
-print make_a
-res2 = make_a()
-print res2
-make_c = res2[1][1]
-print make_c
-res3 = make_c()
-print res3
-'''
+
 def add_root(tree):
     def make_root(tree):
         program = platform.Program()
@@ -550,7 +555,7 @@ if DEBUG:
 blocks = []
 def make_root(redir):
     bs = BlockStatus()
-    r = compile_wrap(bs, tree)
+    r = compile(bs, [tree])
     p = bs.finalise()
     blocks.append(p)
     #p.print_code(pro=True, epi=True)
