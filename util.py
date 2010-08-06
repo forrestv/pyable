@@ -2,6 +2,8 @@ import ctypes
 import sys
 import os
 import traceback
+import struct
+import ast
 
 import corepy.arch.x86_64.isa as isa
 import corepy.arch.x86_64.types.registers as registers
@@ -128,6 +130,13 @@ def print_int64(i):
 print_int64_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64)(print_int64)
 print_int64_addr = ctypes.cast(print_int64_cfunc, ctypes.c_void_p).value
 
+
+@called_from_asm
+def print_double(i):
+    print struct.unpack("d", struct.pack("l", i))[0],
+print_double_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64)(print_double)
+print_double_addr = ctypes.cast(print_double_cfunc, ctypes.c_void_p).value
+
 @called_from_asm
 def print_nl():
     print
@@ -135,6 +144,33 @@ print_nl_cfunc = ctypes.CFUNCTYPE(None)(print_nl)
 print_nl_addr = ctypes.cast(print_nl_cfunc, ctypes.c_void_p).value
 
 malloc_addr = ctypes.cast(ctypes.CDLL("libc.so.6").malloc, ctypes.c_void_p).value
+
+def dump(node, annotate_fields=True, include_attributes=False):
+    """
+    Return a formatted dump of the tree in *node*.  This is mainly useful for
+    debugging purposes.  The returned string will show the names and the values
+    for fields.  This makes the code impossible to evaluate, so if evaluation is
+    wanted *annotate_fields* must be set to False.  Attributes such as line
+    numbers and column offsets are not dumped by default.  If this is wanted,
+    *include_attributes* can be set to True.
+    """
+    def _format(node,indent=4):
+        if isinstance(node, ast.AST):
+            fields = [(a, _format(b, indent+4)) for a, b in ast.iter_fields(node)]
+            rv = node.__class__.__name__ + '(\n'
+            for field in fields:
+                rv += ' '*indent + '%s=%s,\n' % field
+            if include_attributes and node._attributes:
+                rv += fields and ', ' or ' '
+                rv += ', '.join('%s=%s' % (a, _format(getattr(node, a), indent+4))
+                                for a in node._attributes)
+            return rv + ' '*indent + ')'
+        elif isinstance(node, list):
+            return '[\n%s%s\n%s]' % (' '*indent,(',\n'+' '*indent).join(_format(x, indent+4) for x in node), ' '*indent)
+        return repr(node)
+    if not isinstance(node, ast.AST):
+        raise TypeError('expected AST, got %r' % node.__class__.__name__)
+    return _format(node)
 
 if __name__ == "__main__":
     ran = False

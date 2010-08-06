@@ -6,45 +6,16 @@ import corepy.arch.x86_64.isa as isa
 import corepy.arch.x86_64.types.registers as registers
 import corepy.arch.x86_64.platform as platform
 from corepy.arch.x86_64.lib.memory import MemRef
-import corepy.lib.extarray as extarray
-import corepy.lib.printer as printer
-import corepy.arch.x86_64.lib.util as util
 
 import util
 from cdict import cdict
-
-def dump(node, annotate_fields=True, include_attributes=False):
-    """
-    Return a formatted dump of the tree in *node*.  This is mainly useful for
-    debugging purposes.  The returned string will show the names and the values
-    for fields.  This makes the code impossible to evaluate, so if evaluation is
-    wanted *annotate_fields* must be set to False.  Attributes such as line
-    numbers and column offsets are not dumped by default.  If this is wanted,
-    *include_attributes* can be set to True.
-    """
-    def _format(node,indent=4):
-        if isinstance(node, ast.AST):
-            fields = [(a, _format(b, indent+4)) for a, b in ast.iter_fields(node)]
-            rv = node.__class__.__name__ + '(\n'
-            for field in fields:
-                rv += ' '*indent + '%s=%s,\n' % field
-            if include_attributes and node._attributes:
-                rv += fields and ', ' or ' '
-                rv += ', '.join('%s=%s' % (a, _format(getattr(node, a), indent+4))
-                                for a in node._attributes)
-            return rv + ' '*indent + ')'
-        elif isinstance(node, list):
-            return '[\n%s%s\n%s]' % (' '*indent,(',\n'+' '*indent).join(_format(x, indent+4) for x in node), ' '*indent)
-        return repr(node)
-    if not isinstance(node, ast.AST):
-        raise TypeError('expected AST, got %r' % node.__class__.__name__)
-    return _format(node)
+import type_impl
 
 class Function(object):
     def __init__(self, space):
         self.space = space
         self.vars = {}
-        self.var_types = {}
+        self.var_type_impl = {}
     def emit_start(self, code):
         code.add(isa.enter(self.space * 8, 0))
     def emit_end(self, code):
@@ -60,9 +31,9 @@ class Function(object):
             self.vars[name] = len(self.vars)* 8
             return self.get_var_loc(name)
     def set_var_type(self, name, type):
-        self.var_types[name] = type
+        self.var_type_impl[name] = type
     def get_var_type(self, name):
-        return self.var_types[name]
+        return self.var_type_impl[name]
 
 class BlockStatus(object):
     def __init__(self, function=None):
@@ -130,108 +101,7 @@ class _Function(object):
 
 functions = {}
 
-class Int(object):
-    def load_constant(self, value):
-        assert isinstance(value, int)
-        value = int(value)
-        def _(bs, this):
-            bs.code.add(isa.mov(registers.rax, value))
-        return _
-    def __neg__(self):
-        def _(bs, this):
-            bs.code.add(isa.neg(registers.rax))
-        return _
-    
-    def __add__(self, other):
-        if isinstance(other, Int):
-            def _(bs, this):
-                bs.code += isa.add(self.register, other.register)
-                bs.code += isa.push(self.register)
-                bs.stack.append(Int())
-            return _
-        return NotImplemented
-    __radd__ = __add__
-    
-    def __sub__(self, other):
-        if isinstance(other, Int):
-            def _(bs, this):
-                bs.code += isa.sub(self.register, other.register)
-                bs.code += isa.push(self.register)
-                bs.stack.append(Int())
-            return _
-        return NotImplemented
-    
-    def __mul__(self, other):
-        if isinstance(other, Int):
-            def _(bs, this):
-                bs.code += isa.imul(self.register, other.register)
-                bs.code += isa.push(self.register)
-                bs.stack.append(Int())
-            return _
-        return NotImplemented
-    __rmul__ = __mul__
-    
-    def __div__(self, other):
-        if isinstance(other, Int):
-            def _(bs, this):
-                bs.code += isa.mov(registers.rdx, 0)
-                bs.code += isa.mov(registers.rax, self.register)
-                bs.code += isa.idiv(other.register)
-                bs.code += isa.push(registers.rax)
-                bs.stack.append(Int())
-            return _
-        return NotImplemented
-    
-    def __floordiv__(self, other):
-        if isinstance(other, Int):
-            def _(bs, this):
-                bs.code += isa.mov(registers.rdx, 0)
-                bs.code += isa.mov(registers.rax, self.register)
-                bs.code += isa.idiv(other.register)
-                bs.code += isa.push(registers.rax)
-                bs.stack.append(Int())
-            return _
-        return NotImplemented
-    
-    def __mod__(self, other):
-        if isinstance(other, Int):
-            def _(bs, this):
-                bs.code += isa.mov(registers.rdx, 0)
-                bs.code += isa.mov(registers.rax, self.register)
-                bs.code += isa.idiv(other.register)
-                bs.code += isa.push(registers.rdx)
-                bs.stack.append(Int())
-            return _
-        return NotImplemented
 
-class Float(object):
-    def load_constant(self, value):
-        assert isinstance(value, float)
-        value = float(value)
-        def _(bs, this):
-            bs.code.add(isa.mov(registers.rax, struct.unpack("l", struct.pack("d", value))[0]))
-        return _
-    def __neg__(self):
-        def _(bs, this):
-            bs.code.add(isa.neg(registers.rax))
-        return _
-    def __add__(self, other):
-        if isinstance(other, Float):
-            def _(bs, this):
-                bs.code.add(isa.mov(registers.st0, registers.rax))
-                bs.code.add(isa.mov(registers.st1, registers.rbx))
-                bs.code.add(isa.fadd(registers.st0, registers.st1))
-                bs.code.add(isa.mov(registers.rax, registers.st0))
-            return _
-        return NotImplemented
-    __radd__ = __add__
-
-class Tuple(object):
-    def load_constant(self, ast):
-        assert isinstance(ast)
-
-class Object(object):
-    pass
 
 def memoize(f):
     def get(result=[]):
@@ -282,7 +152,7 @@ def compile(bs, stack):
                         bs.code.add(isa.push(registers.rax))
                         bs.stack.append(rax_type)
                         bs.code.add(isa.push(registers.rax))
-                        bs.stack.append(rax_type)
+                        bs.stack.append(rax_type.copy())
                     
                     this.append(target)
                     
@@ -298,9 +168,9 @@ def compile(bs, stack):
                 rax_type = bs.stack.pop()
         elif isinstance(t, ast.Num):
             if isinstance(t.n, float):
-                o = Float()
+                o = type_impl.Float()
             elif isinstance(t.n, int):
-                o = Int()
+                o = type_impl.Int()
             else:
                 assert False, t.n
             this.append(o.load_constant(t.n))
@@ -355,7 +225,7 @@ def compile(bs, stack):
             def _(bs, this):
                 bs.code.add(isa.pop(registers.rax))
                 rax_type = bs.stack.pop()
-                assert isinstance(rax_type, Int), (rax_type, Int)
+                assert isinstance(rax_type, type_impl.Int), rax_type
                 bs.code.add(isa.test(registers.rax, registers.rax))
                 skip = bs.program.get_unique_label()
                 bs.code.add(isa.jz(skip))
@@ -428,7 +298,7 @@ def compile(bs, stack):
                 bs.code.add(isa.cmp(registers.rbx, registers.rax))
                 bs.code.add(isa.mov(registers.rax, 0))
                 bs.code.add(isa.push(registers.rax))
-                bs.stack.append(Int())
+                bs.stack.append(type_impl.Int())
                 label = bs.program.get_unique_label()
                 if isinstance(op, ast.Lt):
                     bs.code.add(isa.jge(label))
@@ -448,7 +318,7 @@ def compile(bs, stack):
                 rax_type = bs.stack.pop()
                 bs.code.add(isa.mov(registers.rax, 1))
                 bs.code.add(isa.push(registers.rax))
-                bs.stack.append(Int())
+                bs.stack.append(type_impl.Int())
                 bs.code.add(label)
         elif isinstance(t, ast.Print):
             assert t.dest is None
@@ -458,8 +328,12 @@ def compile(bs, stack):
                 def _(bs, this):
                     bs.code.add(isa.pop(registers.rdi))
                     rdi_type = bs.stack.pop()
-                    #assert isinstance(rdi_type, Int), "can only print ints"
-                    bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
+                    if isinstance(rdi_type, type_impl.Int):
+                        bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
+                    elif isinstance(rdi_type, type_impl.Float):
+                        bs.code.add(isa.mov(registers.rax, util.print_double_addr))
+                    else:
+                        assert False
                     bs.code.add(isa.call(registers.rax))
             if t.nl:
                 @this.append
@@ -472,21 +346,21 @@ def compile(bs, stack):
             def _(bs, this, t=t):
                 bs.code.add(isa.pop(registers.rax))
                 rax_type = bs.stack.pop()
-                if isinstance(rax_type, Int) and isinstance(t.op, ast.USub):
+                if isinstance(rax_type, type_impl.Int) and isinstance(t.op, ast.USub):
                     bs.code.add(isa.neg(registers.rax))
                 else:
                     assert False, t.op
                 bs.code.add(isa.push(registers.rax))
                 bs.stack.append(rax_type)
         elif isinstance(t, ast.BinOp):
-            this.append(t.right)
             this.append(t.left)
+            this.append(t.right)
             @this.append
             def _(bs, this, t=t):
-                bs.code.add(isa.pop(registers.rdi))
-                rdi_type = bs.stack.pop()
                 bs.code.add(isa.pop(registers.rbx))
                 rbx_type = bs.stack.pop()
+                bs.code.add(isa.pop(registers.rdi))
+                rdi_type = bs.stack.pop()
                 
                 rdi_type.register = registers.rdi
                 rbx_type.register = registers.rbx
@@ -498,12 +372,8 @@ def compile(bs, stack):
                 elif isinstance(t.op, ast.FloorDiv): r = (rdi_type // rbx_type)
                 elif isinstance(t.op, ast.Mod): r = (rdi_type % rbx_type)
                 else: assert False, t.op
-                this.append(r)
                 
-                #@this.append
-                #def _(bs, this):
-                #    bs.code.add(isa.push(registers.rax))
-                #    bs.stack.append(rax_type)
+                this.append(r)
         elif isinstance(t, ast.Call) and 0:
             assert not t.keywords
             assert not t.starargs
@@ -531,14 +401,14 @@ def compile(bs, stack):
                         bs.code.add(isa.pop(MemRef(registers.rax, 8*i)))
                     
                     bs.code.add(isa.push(registers.rax))
-                    bs.stack.append(Tuple())
+                    bs.stack.append(type_impl.Tuple())
             elif isinstance(t.ctx, ast.Store):
                 isa.pop(registers.rax)
                 rax_type = bs.stack.pop()
                 
                 for i, elt in reversed(list(enumerate(t.elts))):
                     bs.code.add(isa.push(MemRef(registers.rax, 8*i)))
-                    bs.stack.append(Int) # XXX
+                    bs.stack.append(type_impl.Int()) # XXX
                 
                 for elt in t.elts:
                     assert isinstance(elt, ast.Name)
@@ -567,36 +437,19 @@ def compile(bs, stack):
             assert False, t
         stack.extend(reversed(this))
 
-
-def add_root(tree):
-    def make_root(tree):
-        program = platform.Program()
-        locs = {}
-        code = program.get_stream()
-        compile(tree, code, locs)
-        program.add(code)
-        program.cache_code()
-        return program
-    refs[1]
-
-
-prerefs = {}
-refs = cdict(lambda k: prerefs.pop(k)())
 if sys.argv[1] == "--debug":
     DEBUG = 1
     sys.argv[1:] = sys.argv[2:]
 else:
     DEBUG = 0
+
 tree = ast.parse(open(sys.argv[1]).read())
 
-#print tree
-#print dump(tree)
-#fadf
-#add_parents(tree)
-#print tree.parent
 if DEBUG:
-    print dump(tree)
+    print util.dump(tree)
+
 blocks = []
+
 def make_root(redir):
     bs = BlockStatus()
     r = compile(bs, [tree])
