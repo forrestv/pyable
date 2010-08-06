@@ -1,51 +1,11 @@
-#block0
-#    x = 0
-#    jmp block1
+each code fragment KNOWS the variables it uses' types
+operations that return variable types ... eg 
 
-#block1
-#    if x < 100000:
-#        jmp block2
-#    jmp block3
+handling integers
+we have int0, int1, int2, int3, int4, int5, int6, int7, ...
+each operation _must_ return the smallest one to fit it ... hmmm maybe cap lower at 8 and multiples of 8
 
-#block2
-#    x += 1
-#    jmp block1
-
-#block3
-#    print x
-#    ret
+for bigger ones, have immutable by reference
 
 
-#while ->
-
-#    ...
-#    jmp blocka
-
-#blocka
-#    if COND:
-#        jmp blockb
-#    jmp blockc
-
-#blockb
-#    BODY
-#    jmp blocka
-
-#blockc
-#    ...
-
-#pass around a block, adding on to it, making new ones
-
-#def while(block):
-#    blocka = Block()
-#    blockb = Block()
-#    blockc = Block()
-#    
-#    block.add(jmp(blocka))
-#    
-#    blocka.add(if(cond) jmp(blockb))
-#    blobka.add(jmp(blockc))
-#    
-#    body(blockb, continue=jmp(blocka), break=jmp(blockc))
-#    blockb.add(jmp(blocka))
-#    
-#    return blockc
+have each function have multiple return points depending on the type
