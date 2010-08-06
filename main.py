@@ -40,16 +40,6 @@ def dump(node, annotate_fields=True, include_attributes=False):
         raise TypeError('expected AST, got %r' % node.__class__.__name__)
     return _format(node)
 
-def add_parents(node, parent=None):
-    node.parent = parent
-    for fieldname, value in ast.iter_fields(node):
-        if isinstance(value, ast.AST):
-            add_parents(value, (node, fieldname))
-        elif isinstance(value, list):
-            for i, child in enumerate(value):
-                assert isinstance(child, ast.AST)
-                add_parents(child, (node, fieldname, i))
-
 class Function(object):
     def __init__(self, space):
         self.space = space
@@ -414,7 +404,6 @@ def compile(bs, stack):
                     bs.code.add(isa.pop(registers.rdi))
                     rdi_type = bs.stack.pop()
                     #assert isinstance(rdi_type, Int), "can only print ints"
-                    print dir(registers)
                     bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
                     bs.code.add(isa.call(registers.rax))
             if t.nl:
@@ -443,7 +432,7 @@ def compile(bs, stack):
                 rax_type = bs.stack.pop()
                 bs.code.add(isa.pop(registers.rbx))
                 rbx_type = bs.stack.pop()
-                if 0:
+                if 1:
                     if isinstance(t.op, ast.Add):
                         bs.code.add(isa.add(registers.rax, registers.rbx))
                     elif isinstance(t.op, ast.Sub):
