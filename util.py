@@ -1,5 +1,6 @@
 import ctypes
 import sys
+import os
 import traceback
 
 import corepy.arch.x86_64.isa as isa
@@ -60,7 +61,7 @@ def called_from_asm(func):
             return func(*args, **kwargs)
         except:
             traceback.print_exc()
-            sys.exit()
+            os._exit(0)
     return f
 
 class Redirection(object):
