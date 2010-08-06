@@ -141,13 +141,68 @@ class Int(object):
         def _(bs, this):
             bs.code.add(isa.neg(registers.rax))
         return _
+    
     def __add__(self, other):
         if isinstance(other, Int):
             def _(bs, this):
-                bs.code.add(isa.add(registers.rax, registers.rbx))
+                bs.code += isa.add(self.register, other.register)
+                bs.code += isa.push(self.register)
+                bs.stack.append(Int())
             return _
         return NotImplemented
     __radd__ = __add__
+    
+    def __sub__(self, other):
+        if isinstance(other, Int):
+            def _(bs, this):
+                bs.code += isa.sub(self.register, other.register)
+                bs.code += isa.push(self.register)
+                bs.stack.append(Int())
+            return _
+        return NotImplemented
+    
+    def __mul__(self, other):
+        if isinstance(other, Int):
+            def _(bs, this):
+                bs.code += isa.imul(self.register, other.register)
+                bs.code += isa.push(self.register)
+                bs.stack.append(Int())
+            return _
+        return NotImplemented
+    __rmul__ = __mul__
+    
+    def __div__(self, other):
+        if isinstance(other, Int):
+            def _(bs, this):
+                bs.code += isa.mov(registers.rdx, 0)
+                bs.code += isa.mov(registers.rax, self.register)
+                bs.code += isa.idiv(other.register)
+                bs.code += isa.push(registers.rax)
+                bs.stack.append(Int())
+            return _
+        return NotImplemented
+    
+    def __floordiv__(self, other):
+        if isinstance(other, Int):
+            def _(bs, this):
+                bs.code += isa.mov(registers.rdx, 0)
+                bs.code += isa.mov(registers.rax, self.register)
+                bs.code += isa.idiv(other.register)
+                bs.code += isa.push(registers.rax)
+                bs.stack.append(Int())
+            return _
+        return NotImplemented
+    
+    def __mod__(self, other):
+        if isinstance(other, Int):
+            def _(bs, this):
+                bs.code += isa.mov(registers.rdx, 0)
+                bs.code += isa.mov(registers.rax, self.register)
+                bs.code += isa.idiv(other.register)
+                bs.code += isa.push(registers.rdx)
+                bs.stack.append(Int())
+            return _
+        return NotImplemented
 
 class Float(object):
     def load_constant(self, value):
@@ -428,42 +483,27 @@ def compile(bs, stack):
             this.append(t.left)
             @this.append
             def _(bs, this, t=t):
-                bs.code.add(isa.pop(registers.rax))
-                rax_type = bs.stack.pop()
+                bs.code.add(isa.pop(registers.rdi))
+                rdi_type = bs.stack.pop()
                 bs.code.add(isa.pop(registers.rbx))
                 rbx_type = bs.stack.pop()
-                if 1:
-                    if isinstance(t.op, ast.Add):
-                        bs.code.add(isa.add(registers.rax, registers.rbx))
-                    elif isinstance(t.op, ast.Sub):
-                        bs.code.add(isa.sub(registers.rax, registers.rbx))
-                    elif isinstance(t.op, ast.Mult):
-                        bs.code.add(isa.imul(registers.rax, registers.rbx))
-                    elif isinstance(t.op, ast.Div):
-                        bs.code.add(isa.mov(registers.rdx, 0))
-                        bs.code.add(isa.idiv(registers.rbx))
-                    elif isinstance(t.op, ast.FloorDiv):
-                        bs.code.add(isa.mov(registers.rdx, 0))
-                        bs.code.add(isa.idiv(registers.rbx))
-                    elif isinstance(t.op, ast.Mod):
-                        bs.code.add(isa.mov(registers.rdx, 0))
-                        bs.code.add(isa.idiv(registers.rbx))
-                        bs.code.add(isa.mov(registers.rax, registers.rdx))
-                    else:
-                        assert False, t.op
-                else:
-                    if isinstance(t.op, ast.Add): r = (rax_type + rbx_type)
-                    elif isinstance(t.op, ast.Sub): r = (rax_type - rbx_type)
-                    elif isinstance(t.op, ast.Mult): r = (rax_type - rbx_type)
-                    elif isinstance(t.op, ast.Div): r = (rax_type / rbx_type)
-                    elif isinstance(t.op, ast.FloorDiv): r = (rax_type // rbx_type)
-                    elif isinstance(t.op, ast.Mult): r = (rax_type % rbx_type)
-                    else: assert False
-                    this.append(r)
-                @this.append
-                def _(bs, this):
-                    bs.code.add(isa.push(registers.rax))
-                    bs.stack.append(rax_type)
+                
+                rdi_type.register = registers.rdi
+                rbx_type.register = registers.rbx
+                
+                if isinstance(t.op, ast.Add): r = (rdi_type + rbx_type)
+                elif isinstance(t.op, ast.Sub): r = (rdi_type - rbx_type)
+                elif isinstance(t.op, ast.Mult): r = (rdi_type * rbx_type)
+                elif isinstance(t.op, ast.Div): r = (rdi_type / rbx_type)
+                elif isinstance(t.op, ast.FloorDiv): r = (rdi_type // rbx_type)
+                elif isinstance(t.op, ast.Mod): r = (rdi_type % rbx_type)
+                else: assert False, t.op
+                this.append(r)
+                
+                #@this.append
+                #def _(bs, this):
+                #    bs.code.add(isa.push(registers.rax))
+                #    bs.stack.append(rax_type)
         elif isinstance(t, ast.Call) and 0:
             assert not t.keywords
             assert not t.starargs
