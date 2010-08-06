@@ -101,12 +101,12 @@ class Float(Type):
         if isinstance(other, Float):
             def _(bs, this):
                 bs.code += isa.push(self.register)
-                bs.code += isa.push(other.register)
                 bs.code.add(isa.movsd(registers.xmm0, MemRef(registers.rsp, 0)))
-                bs.code.add(isa.movsd(registers.xmm1, MemRef(registers.rsp, 8)))
-                bs.code.add(isa.addsd(registers.xmm0, registers.xmm1))
-                bs.code.add(isa.movsd(MemRef(registers.rsp, 8), registers.xmm0))
+                bs.code += isa.push(other.register)
+                bs.code.add(isa.movsd(registers.xmm1, MemRef(registers.rsp, 0)))
                 bs.code.add(isa.pop(registers.rax))
+                bs.code.add(isa.addsd(registers.xmm0, registers.xmm1))
+                bs.code.add(isa.movsd(MemRef(registers.rsp, 0), registers.xmm0))
                 bs.stack.append(Float())
             return _
         return NotImplemented
