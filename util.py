@@ -1,5 +1,4 @@
 import ctypes
-import sys
 import os
 import traceback
 import struct
@@ -23,6 +22,14 @@ class BareProgram(Program):
   def _synthesize_epilogue(self):
     self._epilogue = []
 
+class cdict(dict):
+    def __init__(self, getter):
+        dict.__init__(self)
+        self.getter = getter
+    def __missing__(self, item):
+        self[item] = value = self.getter(item)
+        return value
+
 class fake_int(long):
     def __lt__(self, other):
         # alters corepy.arch.x86_64.isa.x86_64_fields.x86ImmediateOperand.fits
@@ -33,8 +40,8 @@ class fake_int(long):
 def get_call(addr):
     program = BareProgram()
     code = program.get_stream()
-    code.add(isa.mov(registers.rax, fake_int(addr)))
-    code.add(isa.call(registers.rax))
+    code += isa.mov(registers.rax, fake_int(addr))
+    code += isa.call(registers.rax)
     program.add(code)
     program.cache_code()
     return program.render_code
@@ -42,8 +49,8 @@ def get_call(addr):
 def get_jmp(addr):
     program = BareProgram()
     code = program.get_stream()
-    code.add(isa.mov(registers.rax, fake_int(addr)))
-    code.add(isa.jmp(registers.rax))
+    code += isa.mov(registers.rax, fake_int(addr))
+    code += isa.jmp(registers.rax)
     program.add(code)
     program.cache_code()
     return program.render_code
@@ -92,19 +99,19 @@ class Redirection(object):
         # i suppose we could use Redirection.replace for that if we cleared the del junk out
         self._program = BareProgram()
         code = self._program.get_stream()
-        code.add(isa.mov(registers.rax, fake_int(callback_addr)))
-        code.add(isa.call(registers.rax))
-        code.add(isa.jmp(registers.rax))
+        code += isa.mov(registers.rax, fake_int(callback_addr))
+        code += isa.call(registers.rax)
+        code += isa.jmp(registers.rax)
         self._program.add(code)
         self._program.cache_code()
         
         self.caller_program = caller_code.prgm
         self.caller_start = caller_code.prgm.get_unique_label()
         self.caller_end = caller_code.prgm.get_unique_label()
-        caller_code.add(self.caller_start)
-        caller_code.add(isa.mov(registers.rax, fake_int(self._program.inst_addr())))
-        caller_code.add(isa.jmp(registers.rax))
-        caller_code.add(self.caller_end)
+        caller_code += self.caller_start
+        caller_code += isa.mov(registers.rax, fake_int(self._program.inst_addr()))
+        caller_code += isa.jmp(registers.rax)
+        caller_code += self.caller_end
         
         self.caller_program.references.add(self)
     
@@ -187,13 +194,13 @@ if __name__ == "__main__":
     
     program = Program()
     code = program.get_stream()
-    code.add(isa.mov(registers.rdi, 42))
-    code.add(isa.mov(registers.rax, print_int64_addr))
-    code.add(isa.call(registers.rax))
+    code += isa.mov(registers.rdi, 42)
+    code += isa.mov(registers.rax, print_int64_addr)
+    code += isa.call(registers.rax)
     Redirection(code, f)
-    code.add(isa.mov(registers.rdi, 43))
-    code.add(isa.mov(registers.rax, print_int64_addr))
-    code.add(isa.call(registers.rax))
+    code += isa.mov(registers.rdi, 43)
+    code += isa.mov(registers.rax, print_int64_addr)
+    code += isa.call(registers.rax)
     program.add(code)
     
     processor = platform.Processor()

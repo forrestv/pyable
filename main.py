@@ -8,41 +8,97 @@ import corepy.arch.x86_64.platform as platform
 from corepy.arch.x86_64.lib.memory import MemRef
 
 import util
-from cdict import cdict
 import type_impl
 
-class Function(object):
-    def __init__(self, space):
-        self.space = space
+class Executable(object):
+    def __init__(self):
+        self.produced = util.cdict(self.produce)
+    def __call__(self, arg_types=()):
+        def _(bs, this):
+            util.Redirection(bs.code, lambda caller: caller.replace(util.get_call(self.produced[arg_types].inst_addr())))
+        return _
+    def produce(self, arg_types):
+        bs = BlockStatus(Flow(self))
+        bs.code += isa.enter(bs.flow.space * 8, 0)
+        compile(bs, [[
+            lambda bs, this: this.append(self.t.body),
+            lambda bs, this: bs.code.add(isa.leave()),
+            lambda bs, this: bs.code.add(isa.ret()),
+        ]])
+        p = bs.finalise()
+        debug(p, "exec " + self.name)
+        return p
+        #bs.code[enter_index] = isa.enter(len(bs.locs)*8, 0)
+
+class Module(Executable):
+    def __init__(self, t, name):
+        Executable.__init__(self)
+        assert isinstance(t, ast.Module)
+        self.t = t
+        self.name = name
+
+class Function(Executable):
+    def __init__(self, t):
+        Executable.__init__(self)
+        assert isinstance(t, ast.FunctionDef)
+        self.t = t
+
+# separate this into block info
+#     program, code
+# and persistant flow data
+#     variable types, allocations
+
+class Flow(object):
+    def __init__(self, executable):
+        self.executable = executable
+        self.space = 1000
         self.vars = {}
         self.var_type_impl = {}
-    def emit_start(self, code):
-        code.add(isa.enter(self.space * 8, 0))
-    def emit_end(self, code):
-        code.add(isa.leave())
-        code.add(isa.ret())
-        #bs.code[enter_index] = isa.enter(len(bs.locs)*8, 0)
+        self.stack = []
+        self.ctrl_stack = []
+    
+    def __repr__(self):
+        return "Flow<%r>" % self.__dict__
+    
+    def __hash__(self):
+        return 0 # O(n) hack :(
+        return hash(self.space) ^ hash(self.vars) ^ hash(self.var_type_impl)
+    def __eq__(self, other):
+        if not isinstance(other, Flow):
+            return False
+        return self.__dict__ == other.__dict__
+        #if self.executable is not other.executable:
+        #    return False
+        #return (self.space, self.vars, self.var_type_impl, self.stack) == (other.space, other.vars, other.var_type_impl, other.stack)
+    
+    # refactor to get_var(type=None) (need set, del)
     def get_var_loc(self, name):
         try:
             return self.vars[name] - self.space
         except KeyError:
             if len(self.vars) == self.space:
-                raise MemoryError
+                raise MemoryError # hehe
             self.vars[name] = len(self.vars)* 8
             return self.get_var_loc(name)
     def set_var_type(self, name, type):
         self.var_type_impl[name] = type
     def get_var_type(self, name):
         return self.var_type_impl[name]
+    def clone(self):
+        r = Flow(self.executable)
+        r.space = self.space
+        r.vars.update(self.vars)
+        r.var_type_impl.update(self.var_type_impl)
+        r.stack[:] = self.stack[:]
+        r.ctrl_stack[:] = self.ctrl_stack[:]
+        return r
 
 class BlockStatus(object):
-    def __init__(self, function=None):
-        if function is None:
-            function = Function(1000)
-        self.function = function
+    def __init__(self, flow):
+        self.flow = flow
+        
         self.program = util.BareProgram()
         self.code = self.program.get_stream()
-        self.stack = []
     
     def finalise(self):
         while False: #True:
@@ -71,44 +127,26 @@ class BlockStatus(object):
                 self.code = res
             else:
                 break
+        
         self.program.add(self.code)
         self.program.cache_code()
-        #self.program.print_code()
-        return self.program # return Block(self.program)
+        blocks.append(self.program)
+        
+        return self.program
 
-class Block(object):
-    def __init__(self, program):
-        self.program = program
-
-class _Function(object):
-    def __init__(self, t):
-        self.t = t
-        assert isinstance(self.t, ast.FunctionDef)
-        self.addr = None
-        self.program = None
-    def _get_addr(self):
-        if self.addr is None:
-            self._render()
-        return self.addr
-    def add_call(self, code):
-        if self.addr:
-            code.add(isa.mov(registers.rax, util.fake_int(self.addr)))
-            code.add(isa.call(registers.rax))
-        else:
-            util.Redirection(self._redir_callback)
-    def redir_callback(self, redir):
-        redir.replace(util.get_call(self._get_addr()))
-
-functions = {}
-
-
+def debug(program, name):
+    if DEBUG:
+        print "start", name
+        program.print_code()
+        print "end", name
 
 def memoize(f):
-    def get(result=[]):
-        if not result:
-            result.append(f())
-        return result[0]
-    return get
+    cache = {}
+    def _(*args):
+        if args not in cache:
+            cache[args] = f(*args)
+        return cache[args]
+    return _
 
 def compile(bs, stack):
     while True:
@@ -119,8 +157,6 @@ def compile(bs, stack):
             t = None
         
         if t is None:
-            if DEBUG:
-                bs.code.print_code()
             return bs
         elif callable(t):
             t(bs, this)
@@ -128,10 +164,9 @@ def compile(bs, stack):
             assert not this
             this = t
         elif isinstance(t, ast.Module):
-            bs.function.emit_start(bs.code)
-            this.append(t.body)
-            this.append(lambda bs, this: bs.function.emit_end(bs.code))
+            assert False
         elif isinstance(t, ast.FunctionDef):
+            assert False
             functions[t.name] = Function(t)
         elif isinstance(t, ast.AugAssign):
             this.append(ast.Assign(
@@ -142,147 +177,133 @@ def compile(bs, stack):
             this.append(t.value) # pushes 1
             @this.append
             def _(bs, this, t=t):
-                bs.code.add(isa.pop(registers.rax))
-                rax_type = bs.stack.pop()
+                bs.code += isa.pop(registers.rax)
+                rax_type = bs.flow.stack.pop()
                 for target in t.targets:
                     assert isinstance(target.ctx, ast.Store)
                     
                     @this.append
                     def _(bs, this):
-                        bs.code.add(isa.push(registers.rax))
-                        bs.stack.append(rax_type)
-                        bs.code.add(isa.push(registers.rax))
-                        bs.stack.append(rax_type.copy())
+                        bs.code += isa.push(registers.rax)
+                        bs.flow.stack.append(rax_type)
+                        bs.code += isa.push(registers.rax)
+                        bs.flow.stack.append(rax_type)
                     
                     this.append(target)
                     
                     @this.append
                     def _(bs, this):
-                        bs.code.add(isa.pop(registers.rax))
-                        rax_type = bs.stack.pop()
+                        bs.code += isa.pop(registers.rax)
+                        rax_type = bs.flow.stack.pop()
         elif isinstance(t, ast.Expr):
             this.append(t.value)
             @this.append
             def _(bs, this, t=t):
-                bs.code.add(isa.pop(registers.rax))
-                rax_type = bs.stack.pop()
+                bs.code += isa.pop(registers.rax)
+                rax_type = bs.flow.stack.pop()
         elif isinstance(t, ast.Num):
             if isinstance(t.n, float):
-                o = type_impl.Float()
+                o = type_impl.Float
             elif isinstance(t.n, int):
-                o = type_impl.Int()
+                o = type_impl.Int
             else:
                 assert False, t.n
             this.append(o.load_constant(t.n))
             @this.append
             def _(bs, this, o=o):
-                bs.code.add(isa.push(registers.rax))
-                bs.stack.append(o)
+                bs.code += isa.push(registers.rax)
+                bs.flow.stack.append(o)
         elif isinstance(t, ast.Name):
             if isinstance(t.ctx, ast.Load):
-                bs.code.add(isa.mov(registers.rax, MemRef(registers.rbp, bs.function.get_var_loc(t.id))))
-                rax_type = bs.function.get_var_type(t.id)
-                bs.code.add(isa.push(registers.rax))
-                bs.stack.append(rax_type)
+                bs.code += isa.mov(registers.rax, MemRef(registers.rbp, bs.flow.get_var_loc(t.id)))
+                rax_type = bs.flow.get_var_type(t.id)
+                bs.code += isa.push(registers.rax)
+                bs.flow.stack.append(rax_type)
             elif isinstance(t.ctx, ast.Store):
-                bs.code.add(isa.pop(registers.rax))
-                rax_type = bs.stack.pop()
-                bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(t.id)), registers.rax))
-                bs.function.set_var_type(t.id, rax_type)
+                bs.code += isa.pop(registers.rax)
+                rax_type = bs.flow.stack.pop()
+                bs.code += isa.mov(MemRef(registers.rbp, bs.flow.get_var_loc(t.id)), registers.rax)
+                bs.flow.set_var_type(t.id, rax_type)
             else:
                 assert False, t.ctx
         elif isinstance(t, ast.If):
-            a_bs = bs
-            
             @memoize
-            def make_b(t=t, a_bs=a_bs):
-                bs = BlockStatus(a_bs.function)
+            def make_b(flow, t=t):
+                bs = BlockStatus(flow.clone())
                 compile(bs, [[
                     t.body,
-                    lambda bs, this: util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c()))),
+                    lambda bs, this: util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c(bs.flow)))),
                 ]])
                 p = bs.finalise()
-                blocks.append(p)
-                if DEBUG:
-                    print "if_b", hex(p.inst_addr())
-                    p.print_code()
+                debug(p, "if_b")
                 return p.inst_addr()
             
             @memoize
-            def make_c(t=t, stack=stack):
-                bs = BlockStatus(a_bs.function)
+            def make_c(flow, stack=stack):
+                bs = BlockStatus(flow.clone())
                 compile(bs, stack)
                 p = bs.finalise()
-                blocks.append(p)
-                if DEBUG:
-                    print "if_c", hex(p.inst_addr())
-                    p.print_code()
+                debug(p, "if_c")
                 return p.inst_addr()
-            
             
             this.append(t.test)
             @this.append
             def _(bs, this):
-                bs.code.add(isa.pop(registers.rax))
-                rax_type = bs.stack.pop()
-                assert isinstance(rax_type, type_impl.Int), rax_type
-                bs.code.add(isa.test(registers.rax, registers.rax))
+                bs.code += isa.pop(registers.rax)
+                rax_type = bs.flow.stack.pop()
+                assert isinstance(rax_type, type(type_impl.Int)), rax_type
+                bs.code += isa.test(registers.rax, registers.rax)
                 skip = bs.program.get_unique_label()
-                bs.code.add(isa.jz(skip))
-                util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_b())))
-                bs.code.add(skip)
-                util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c())))
+                bs.code += isa.jz(skip)
+                util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_b(bs.flow))))
+                bs.code += skip
+                util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c(bs.flow))))
             this.append(None)
         elif isinstance(t, ast.While):
             @memoize
-            def make_a(t=t, a_bs=bs):
-                if DEBUG:
-                    print "make_a"
+            def make_a(flow, t=t):
                 def _(bs, this):
-                    bs.code.add(isa.pop(registers.rax))
-                    rax_type = bs.stack.pop()
-                    bs.code.add(isa.test(registers.rax, registers.rax))
+                    bs.code += isa.pop(registers.rax)
+                    rax_type = bs.flow.stack.pop()
+                    bs.code += isa.test(registers.rax, registers.rax)
                     skip = bs.program.get_unique_label()
-                    bs.code.add(isa.jz(skip))
-                    util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_b())))
-                    bs.code.add(skip)
-                    util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c())))
-                bs = BlockStatus(a_bs.function)
+                    bs.code += isa.jz(skip)
+                    util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_b(bs.flow))))
+                    bs.code += skip
+                    util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c(bs.flow))))
+                bs = BlockStatus(flow.clone())
                 compile(bs, [[t.test, _]])
                 p = bs.finalise()
-                blocks.append(p)
-                if DEBUG:
-                    p.print_code()
+                debug(p, "while_a")
                 return p.inst_addr()
             
             @memoize
-            def make_b(t=t, a_bs=bs):
-                if DEBUG:
-                    print "make_b while"
-                bs = BlockStatus(a_bs.function)
+            def make_b(flow, t=t):
+                bs = BlockStatus(flow.clone())
                 compile(bs, [[
                     t.body,
-                    lambda bs, this: util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_a()))),
+                    lambda bs, this: util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_a(bs.flow)))),
                 ]])
                 p = bs.finalise()
-                blocks.append(p)
-                if DEBUG:
-                    print "addr", hex(p.inst_addr())
-                    p.print_code(hex=True)
+                debug(p, "while_b")
                 return p.inst_addr()
             
             @memoize
-            def make_c(t=t, stack=stack, a_bs=bs):
-                bs = BlockStatus(a_bs.function)
+            def make_c(flow, t=t, stack=stack):
+                bs = BlockStatus(flow.clone())
+                removed = bs.flow.ctrl_stack.pop()
+                assert removed is mine
                 compile(bs, stack)
                 p = bs.finalise()
-                blocks.append(p)
-                if DEBUG:
-                    print "if_c", hex(p.inst_addr())
-                    p.print_code()
+                debug(p, "while_c")
                 return p.inst_addr()
             
-            util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_a())))
+            bs.flow.ctrl_stack.append((
+                lambda bs, this: util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_a(bs.flow)))), # continue
+                lambda bs, this: util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c(bs.flow)))), # break
+            ))
+            mine = bs.flow.ctrl_stack[-1]
+            util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_a(bs.flow))))
             this.append(None)
         elif isinstance(t, ast.Compare):
             assert len(t.ops) == 1 and len(t.comparators) == 1
@@ -291,76 +312,76 @@ def compile(bs, stack):
             @this.append
             def _(bs, this, t=t):
                 op = t.ops[0]
-                bs.code.add(isa.pop(registers.rax))
-                rax_type = bs.stack.pop()
-                bs.code.add(isa.pop(registers.rbx))
-                rbx_type = bs.stack.pop()
-                bs.code.add(isa.cmp(registers.rbx, registers.rax))
-                bs.code.add(isa.mov(registers.rax, 0))
-                bs.code.add(isa.push(registers.rax))
-                bs.stack.append(type_impl.Int())
+                bs.code += isa.pop(registers.rax)
+                rax_type = bs.flow.stack.pop()
+                bs.code += isa.pop(registers.rbx)
+                rbx_type = bs.flow.stack.pop()
+                bs.code += isa.cmp(registers.rbx, registers.rax)
+                bs.code += isa.mov(registers.rax, 0)
+                bs.code += isa.push(registers.rax)
+                bs.flow.stack.append(type_impl.Int)
                 label = bs.program.get_unique_label()
                 if isinstance(op, ast.Lt):
-                    bs.code.add(isa.jge(label))
+                    bs.code += isa.jge(label)
                 elif isinstance(op, ast.Gt):
-                    bs.code.add(isa.jle(label))
+                    bs.code += isa.jle(label)
                 elif isinstance(op, ast.LtE):
-                    bs.code.add(isa.jg(label))
+                    bs.code += isa.jg(label)
                 elif isinstance(op, ast.GtE):
-                    bs.code.add(isa.jl(label))
+                    bs.code += isa.jl(label)
                 elif isinstance(op, ast.Eq):
-                    bs.code.add(isa.jne(label))
+                    bs.code += isa.jne(label)
                 elif isinstance(op, ast.NotEq):
-                    bs.code.add(isa.je(label))
+                    bs.code += isa.je(label)
                 else:
                     assert False, op
-                bs.code.add(isa.pop(registers.rax))
-                rax_type = bs.stack.pop()
-                bs.code.add(isa.mov(registers.rax, 1))
-                bs.code.add(isa.push(registers.rax))
-                bs.stack.append(type_impl.Int())
-                bs.code.add(label)
+                bs.code += isa.pop(registers.rax)
+                rax_type = bs.flow.stack.pop()
+                bs.code += isa.mov(registers.rax, 1)
+                bs.code += isa.push(registers.rax)
+                bs.flow.stack.append(type_impl.Int)
+                bs.code += label
         elif isinstance(t, ast.Print):
             assert t.dest is None
             for value in t.values:
                 this.append(value)
                 @this.append
                 def _(bs, this):
-                    bs.code.add(isa.pop(registers.rdi))
-                    rdi_type = bs.stack.pop()
-                    if isinstance(rdi_type, type_impl.Int):
-                        bs.code.add(isa.mov(registers.rax, util.print_int64_addr))
-                    elif isinstance(rdi_type, type_impl.Float):
-                        bs.code.add(isa.mov(registers.rax, util.print_double_addr))
+                    bs.code += isa.pop(registers.rdi)
+                    rdi_type = bs.flow.stack.pop()
+                    if isinstance(rdi_type, type(type_impl.Int)):
+                        bs.code += isa.mov(registers.rax, util.print_int64_addr)
+                    elif isinstance(rdi_type, type(type_impl.Float)):
+                        bs.code += isa.mov(registers.rax, util.print_double_addr)
                     else:
                         assert False
-                    bs.code.add(isa.call(registers.rax))
+                    bs.code += isa.call(registers.rax)
             if t.nl:
                 @this.append
                 def _(bs, this):
-                    bs.code.add(isa.mov(registers.rax, util.print_nl_addr))
-                    bs.code.add(isa.call(registers.rax))
+                    bs.code += isa.mov(registers.rax, util.print_nl_addr)
+                    bs.code += isa.call(registers.rax)
         elif isinstance(t, ast.UnaryOp):
             this.append(t.operand)
             @this.append
             def _(bs, this, t=t):
-                bs.code.add(isa.pop(registers.rax))
-                rax_type = bs.stack.pop()
-                if isinstance(rax_type, type_impl.Int) and isinstance(t.op, ast.USub):
-                    bs.code.add(isa.neg(registers.rax))
+                bs.code += isa.pop(registers.rax)
+                rax_type = bs.flow.stack.pop()
+                if isinstance(rax_type, type(type_impl.Int)) and isinstance(t.op, ast.USub):
+                    bs.code += isa.neg(registers.rax)
                 else:
                     assert False, t.op
-                bs.code.add(isa.push(registers.rax))
-                bs.stack.append(rax_type)
+                bs.code += isa.push(registers.rax)
+                bs.flow.stack.append(rax_type)
         elif isinstance(t, ast.BinOp):
             this.append(t.left)
             this.append(t.right)
             @this.append
             def _(bs, this, t=t):
-                bs.code.add(isa.pop(registers.rbx))
-                rbx_type = bs.stack.pop()
-                bs.code.add(isa.pop(registers.rdi))
-                rdi_type = bs.stack.pop()
+                bs.code += isa.pop(registers.rbx)
+                rbx_type = bs.flow.stack.pop().copy()
+                bs.code += isa.pop(registers.rdi)
+                rdi_type = bs.flow.stack.pop().copy()
                 
                 rdi_type.register = registers.rdi
                 rbx_type.register = registers.rbx
@@ -382,33 +403,33 @@ def compile(bs, stack):
                 bs = compile(bs, arg)
             regs = [registers.rdi, registers.rsi, registers.rdx, registers.rcx][:len(t.args)]
             for arg in t.args:
-                bs.code.add(isa.pop(regs.pop()))
-                rax_type = bs.stack.pop() # XXX not rax
+                bs.code += isa.pop(regs.pop())
+                rax_type = bs.flow.stack.pop() # XXX not rax
             functions[t.func.id].add_call(bs.code)
-            bs.code.add(isa.push(registers.rax))
-            bs.stack.append(rax_type)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(rax_type)
         elif isinstance(t, ast.Tuple):
             if isinstance(t.ctx, ast.Load):
                 this.extend(t.elts)
                 
                 @this.append
                 def _(bs, this, t=t):
-                    bs.code.add(isa.mov(registers.rdi, 8*len(t.elts)))
-                    bs.code.add(isa.mov(registers.rax, util.malloc_addr))
-                    bs.code.add(isa.call(registers.rax))
+                    bs.code += isa.mov(registers.rdi, 8*len(t.elts))
+                    bs.code += isa.mov(registers.rax, util.malloc_addr)
+                    bs.code += isa.call(registers.rax)
                     
                     for i, elt in reversed(list(enumerate(t.elts))):
-                        bs.code.add(isa.pop(MemRef(registers.rax, 8*i)))
+                        bs.code += isa.pop(MemRef(registers.rax, 8*i))
                     
-                    bs.code.add(isa.push(registers.rax))
-                    bs.stack.append(type_impl.Tuple())
+                    bs.code += isa.push(registers.rax)
+                    bs.flow.stack.append(type_impl.Tuple())
             elif isinstance(t.ctx, ast.Store):
                 isa.pop(registers.rax)
-                rax_type = bs.stack.pop()
+                rax_type = bs.flow.stack.pop()
                 
                 for i, elt in reversed(list(enumerate(t.elts))):
-                    bs.code.add(isa.push(MemRef(registers.rax, 8*i)))
-                    bs.stack.append(type_impl.Int()) # XXX
+                    bs.code += isa.push(MemRef(registers.rax, 8*i))
+                    bs.flow.stack.append(type_impl.Int) # XXX
                 
                 for elt in t.elts:
                     assert isinstance(elt, ast.Name)
@@ -421,18 +442,24 @@ def compile(bs, stack):
                 this.append(t.value)
                 
                 @this.append
-                def _(bs, this, t=t):                
+                def _(bs, this, t=t):
                     isa.pop(registers.rax)
-                    rax_type = bs.stack.pop()
+                    rax_type = bs.flow.stack.pop()
                     
-                    bs.code.add(isa.push(MemRef(registers.rax, 8 * t.slice.value.n)))
+                    bs.code += isa.push(MemRef(registers.rax, 8 * t.slice.value.n))
             elif isinstance(t.ctx, ast.Store):
                 assert False
-                bs.code.add(isa.pop(registers.rax))
-                rax_type = bs.stack.pop()
-                bs.code.add(isa.mov(MemRef(registers.rbp, bs.function.get_var_loc(t.id)), registers.rax))
+                bs.code += isa.pop(registers.rax)
+                rax_type = bs.flow.stack.pop()
+                bs.code += isa.mov(MemRef(registers.rbp, bs.flow.get_var_loc(t.id)), registers.rax)
             else:
                 assert False, t.ctx
+        elif isinstance(t, ast.Continue):
+            this.append(bs.flow.ctrl_stack[-1][0])
+        elif isinstance(t, ast.Break):
+            this.append(bs.flow.ctrl_stack[-1][1])
+        elif isinstance(t, ast.Str):
+            this.append(type_impl.Str.load_constant(t.s))
         else:
             assert False, t
         stack.extend(reversed(this))
@@ -450,24 +477,26 @@ if DEBUG:
 
 blocks = []
 
-def make_root(redir):
-    bs = BlockStatus()
-    r = compile(bs, [tree])
+def make_root():
+    bs = BlockStatus(Flow(None))
+    compile(bs, [[
+        main_module(),
+        lambda bs, this: bs.code.add(isa.ret()),
+    ]])
     p = bs.finalise()
-    blocks.append(p)
-    #p.print_code(pro=True, epi=True)
-    if DEBUG:
-        print "make_root"
-        p.print_code()
-    redir.replace(util.get_call(p.inst_addr()))
+    debug(p, "make_root")
+    return p
+
+main_module = Module(tree, "__main__")
 
 def caller():
-    program = util.Program()
-    code = program.get_stream()
-    util.Redirection(code, make_root)
-    program.add(code)
-    program.cache_code()
-    return program
+    p = util.Program()
+    code = p.get_stream()
+    util.Redirection(code, lambda caller: caller.replace(util.get_call(make_root().inst_addr())))
+    p.add(code)
+    p.cache_code()
+    debug(p, "caller")
+    return p
 caller = caller()
 
 processor = platform.Processor()

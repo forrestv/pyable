@@ -2791,15 +2791,6 @@ class cvtsi2sd(DispatchInstruction):
     (xmm_mem32,      {'opcode':[0x0F, 0x2A], 'modrm':None, 'prefix':[0xF2]}))
   arch_ext = 2
 
-class cvtsi2sd(DispatchInstruction):
-  dispatch = (
-    # TODO - reg64 version defined by intel manuals but not AMD
-    #(xmm_reg64,      {'opcode':[0x0F, 0x2A], 'modrm':None, 'prefix':[0xF2]}),
-    #(xmm_mem64,      {'opcode':[0x0F, 0x2A], 'modrm':None, 'prefix':[0xF2]}),
-    (xmm_reg32,      {'opcode':[0x0F, 0x2A], 'modrm':None, 'prefix':[0xF2]}),
-    (xmm_mem32,      {'opcode':[0x0F, 0x2A], 'modrm':None, 'prefix':[0xF2]}))
-  arch_ext = 2
-
 class cvtss2sd(DispatchInstruction):
   dispatch = (
     (xmm_xmm,        {'opcode':[0x0F, 0x5A], 'modrm':None, 'prefix':[0xF3]}),
