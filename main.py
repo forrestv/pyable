@@ -45,7 +45,6 @@ class Module(Executable):
             bs.code += isa.push(registers.rbp)
             bs.code += isa.mov(registers.rbp, registers.rsp)
             bs.code += isa.sub(registers.rsp, bs.flow.space * 8)
-            bs.code += isa.sub(registers.rbp, 80)
         return this
 
 class Function(Executable):
@@ -64,53 +63,30 @@ class Function(Executable):
         # isa.jmp(<here>)
         @this.append
         def _(bs, this):
-            bs.code += isa.pop(registers.r13) # return address
-            bs.code += isa.mov(registers.r12, registers.rbp)
+            bs.code += isa.push(registers.rbp)
             bs.code += isa.mov(registers.rbp, registers.rsp)
-            bs.code += isa.sub(registers.rbp, 80)
-            bs.code += isa.pop(registers.rax)
+            bs.code += isa.sub(registers.rsp, bs.flow.space * 8)
         # pop uses rsp
         # memory access uses rbp
         # we need old stack current memory access
         assert len(arg_types) <= len(self.t.args.args), [arg_types, self.t.args.args]
-        for arg_type, t in zip(arg_types, self.t.args.args):
+        for i, (arg_type, t) in enumerate(zip(arg_types, self.t.args.args)):
             assert isinstance(t, ast.Name)
             assert isinstance(t.ctx, ast.Param)
             def _(bs, this, arg_type=arg_type):
                 bs.flow.stack.append(arg_type)
+                bs.code += isa.push(MemRef(registers.rbp, 24 + 8 * i))
             this.append(ast.Assign(
                 targets=[ast.Name(id=t.id, ctx=ast.Store())],
                 value=_,
             ))
             # pop memref(registers.rbp, -x)
-        @this.append
-        def _(bs, this):
-            bs.code += isa.push(registers.r13) # return address
-            bs.code += isa.push(registers.r12) # frame pointer
-            bs.code += isa.sub(registers.rsp, bs.flow.space * 8)
         for t, v in zip(self.t.args.args[::-1][:len(self.t.args.args)-len(arg_types)], self.t.args.defaults[::-1]):
             print t.id, v.n
             this.append(ast.Assign(
                 targets=[ast.Name(id=t.id, ctx=ast.Store())],
                 value=v,
             ))
-        '''
-                bs.code += isa.pop(registers.rax)
-                rax_type = bs.flow.stack.pop()
-        
-                # leave
-                bs.code += isa.mov(registers.rsp, registers.rbp)
-                bs.code += isa.pop(registers.rbp)
-                
-                bs.code += isa.pop(registers.rdi) # return address
-                
-                bs.code += isa.push(registers.rax)
-                bs.code += isa.push(rax_type.id)
-                
-                bs.code += isa.push(registers.rdi) # return address
-                assert not bs.flow.stack
-                bs.code += isa.ret() # return address
-        '''
         return this
 
 # separate this into block info
@@ -493,6 +469,12 @@ def compile(bs, stack):
                 @this.append
                 def _(bs, this):
                     bs.code += isa.pop(registers.rax)
+                    assert bs.flow.stack.pop() is type_impl.Function
+                    for arg in t.args:
+                        bs.code += isa.pop(registers.rax)
+                        bs.flow.stack.pop() # XXX
+                    bs.code += isa.push(registers.r12)
+                    #bs.flow.stack.append(type_impl.id_to_type[registers.r13])
                     bs.flow.stack.append(type_impl.Int)
                 compile(bs, stack + [this])
                 p = bs.finalise()
@@ -523,8 +505,8 @@ def compile(bs, stack):
             
             @this.append
             def _(bs, this, t=t):
-                assert bs.flow.stack.pop() is type_impl.Function
-                types = tuple(bs.flow.stack.pop() for a in t.args)
+                assert bs.flow.stack[-1] is type_impl.Function
+                types = tuple(bs.flow.stack[-2 - i] for i, a in enumerate(t.args))
                 bs.code += isa.mov(registers.rdi, MemRef(registers.rsp))
                 util.Redirection(bs.code, lambda caller, data: caller.replace(util.get_jmp(make_thingy(bs.flow, data, types))), True)
             this.append(None)
@@ -590,22 +572,15 @@ def compile(bs, stack):
                 this.append(t.value)
             @this.append
             def _(bs, this):
-                bs.code += isa.pop(registers.rax)
+                bs.code += isa.pop(registers.r12)
                 rax_type = bs.flow.stack.pop()
                 
+                bs.code += isa.mov(registers.r13, rax_type.id)
+                
                 # leave
-                bs.code += isa.add(registers.rbp, 80)
                 bs.code += isa.mov(registers.rsp, registers.rbp)
                 bs.code += isa.pop(registers.rbp)
                 
-                bs.code += isa.pop(registers.rdi) # return address
-                
-                bs.code += isa.push(registers.rax)
-                bs.code += isa.push(rax_type.id)
-                
-                
-                
-                bs.code += isa.push(registers.rdi) # return address
                 assert not bs.flow.stack, bs.flow.stack
                 
                 bs.code += isa.ret() # return address
@@ -634,8 +609,6 @@ def make_root():
     bs = BlockStatus(Flow(None))
     compile(bs, [[
         main_module(),
-        lambda bs, this: bs.code.add(isa.pop(registers.rax)),
-        lambda bs, this: bs.code.add(isa.pop(registers.rax)),
         lambda bs, this: bs.code.add(isa.ret()),
     ]])
     p = bs.finalise()

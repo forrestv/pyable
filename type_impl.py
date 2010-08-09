@@ -9,12 +9,12 @@ from corepy.arch.x86_64.lib.memory import MemRef
 
 import util
 
-id_to_class = {}
+id_to_type = {}
 
 def number(inst):
-    inst.id = len(id_to_class)
-    assert inst.id not in id_to_class
-    id_to_class[inst.id] = inst
+    inst.id = len(id_to_type)
+    assert inst.id not in id_to_type
+    id_to_type[inst.id] = inst
     return inst
 
 class _Type(object):
