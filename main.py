@@ -73,7 +73,7 @@ class Function(Executable):
         for i, (arg_type, t) in enumerate(zip(arg_types, self.t.args.args)):
             assert isinstance(t, ast.Name)
             assert isinstance(t.ctx, ast.Param)
-            def _(bs, this, arg_type=arg_type):
+            def _(bs, this, arg_type=arg_type, i=i):
                 bs.flow.stack.append(arg_type)
                 bs.code += isa.push(MemRef(registers.rbp, 24 + 8 * i))
             this.append(ast.Assign(
@@ -82,7 +82,6 @@ class Function(Executable):
             ))
             # pop memref(registers.rbp, -x)
         for t, v in zip(self.t.args.args[::-1][:len(self.t.args.args)-len(arg_types)], self.t.args.defaults[::-1]):
-            print t.id, v.n
             this.append(ast.Assign(
                 targets=[ast.Name(id=t.id, ctx=ast.Store())],
                 value=v,
