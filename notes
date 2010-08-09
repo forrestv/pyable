@@ -9,3 +9,9 @@ for bigger ones, have immutable by reference
 
 
 have each function have multiple return points depending on the type
+
+---
+
+use negative index locals
+
+and adjust stack when calling :D

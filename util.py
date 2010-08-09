@@ -9,18 +9,18 @@ import corepy.arch.x86_64.types.registers as registers
 import corepy.arch.x86_64.platform as platform
 
 class Program(platform.Program):
-  def __init__(self, *args, **kwargs):
-    platform.Program.__init__(self, *args, **kwargs)
-    self.references = set()
-  def cache_code(self):
-    platform.Program.cache_code(self)
-    self.render_code.references = self.references # shared, not copied
+    def __init__(self, *args, **kwargs):
+        platform.Program.__init__(self, *args, **kwargs)
+        self.references = set()
+    def cache_code(self):
+        platform.Program.cache_code(self)
+        self.render_code.references = self.references # shared, not copied
 
 class BareProgram(Program):
-  def _synthesize_prologue(self):
-    self._prologue = []
-  def _synthesize_epilogue(self):
-    self._epilogue = []
+    def _synthesize_prologue(self):
+        self._prologue = []
+    def _synthesize_epilogue(self):
+        self._epilogue = []
 
 class cdict(dict):
     def __init__(self, getter):
@@ -87,10 +87,11 @@ class Redirection(object):
     a call or jmp from get_call and get_jmp.
     """
     
-    def __init__(self, caller_code, callback):
+    def __init__(self, caller_code, callback, take_arg=False):
         self.callback2 = callback
+        self.take_arg = take_arg
         
-        self.callback_cfunc = ctypes.CFUNCTYPE(ctypes.c_uint64)(self.callback)
+        self.callback_cfunc = ctypes.CFUNCTYPE(ctypes.c_uint64, ctypes.c_uint64)(self.callback)
         callback_addr = ctypes.cast(self.callback_cfunc, ctypes.c_void_p).value
         
         # we could hook on caller_program.compile and build this when the caller is compiled
@@ -116,15 +117,18 @@ class Redirection(object):
         self.caller_program.references.add(self)
     
     @called_from_asm
-    def callback(self):
-        self.callback2(self)
+    def callback(self, data):
+        if self.take_arg:
+            self.callback2(self, data)
+        else:
+            self.callback2(self)
         if hasattr(self, "jmp_addr"):
             return self.jmp_addr
         return self.caller_program.inst_addr() + self.caller_start.position
     
     def replace(self, data):
         assert list(self.caller_program.render_code[self.caller_start.position:self.caller_end.position]) == \
-             list(get_jmp(self._program.inst_addr()))
+            list(get_jmp(self._program.inst_addr()))
         self.caller_program.render_code[self.caller_start.position:self.caller_end.position] = data
         self.caller_program.references.remove(self)
         self.jmp_addr = self.caller_program.inst_addr() + self.caller_start.position
@@ -143,6 +147,13 @@ def print_double(i):
     print struct.unpack("d", struct.pack("l", i))[0],
 print_double_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64)(print_double)
 print_double_addr = ctypes.cast(print_double_cfunc, ctypes.c_void_p).value
+
+@called_from_asm
+def print_string(i):
+    length, = struct.unpack("l", ctypes.string_at(i, 8))
+    print ctypes.string_at(i+8, length),
+print_string_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64)(print_string)
+print_string_addr = ctypes.cast(print_string_cfunc, ctypes.c_void_p).value
 
 @called_from_asm
 def print_nl():
@@ -170,7 +181,7 @@ def dump(node, annotate_fields=True, include_attributes=False):
             if include_attributes and node._attributes:
                 rv += fields and ', ' or ' '
                 rv += ', '.join('%s=%s' % (a, _format(getattr(node, a), indent+4))
-                                for a in node._attributes)
+                    for a in node._attributes)
             return rv + ' '*indent + ')'
         elif isinstance(node, list):
             return '[\n%s%s\n%s]' % (' '*indent,(',\n'+' '*indent).join(_format(x, indent+4) for x in node), ' '*indent)

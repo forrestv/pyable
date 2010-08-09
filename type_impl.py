@@ -9,10 +9,18 @@ from corepy.arch.x86_64.lib.memory import MemRef
 
 import util
 
+id_to_class = {}
+
+def number(inst):
+    inst.id = len(id_to_class)
+    assert inst.id not in id_to_class
+    id_to_class[inst.id] = inst
+    return inst
+
 class _Type(object):
     def copy(self):
         return self.__class__()
-Type = _Type()
+Type = number(_Type())
 
 class _Int(_Type):
     def load_constant(self, value):
@@ -89,7 +97,7 @@ class _Int(_Type):
                 bs.flow.stack.append(Int)
             return _
         return NotImplemented
-Int = _Int()
+Int = number(_Int())
 
 class _Float(_Type):
     def load_constant(self, value):
@@ -124,7 +132,7 @@ class _Float(_Type):
             return _
         return NotImplemented
     __radd__ = __add__
-Float = _Float()
+Float = number(_Float())
 
 class Tuple(_Type):
     def load_constant(self, ast):
@@ -143,3 +151,7 @@ class _Str(_Type):
             bs.flow.stack.append(Str)
         return _
 Str = _Str()
+
+class _Function(_Type):
+    pass
+Function = _Function()

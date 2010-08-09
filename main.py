@@ -21,10 +21,12 @@ class Executable(object):
         bs = BlockStatus(Flow(self))
         bs.code += isa.enter(bs.flow.space * 8, 0)
         compile(bs, [[
-            lambda bs, this: this.append(self.t.body),
-            lambda bs, this: bs.code.add(isa.leave()),
-            lambda bs, this: bs.code.add(isa.ret()),
+            self.pre(arg_types),
+            self.t.body,
+            ast.Return(value=None),
         ]])
+        #print self.pre(arg_types)
+        #print list(bs.code)
         p = bs.finalise()
         debug(p, "exec " + self.name)
         return p
@@ -36,12 +38,36 @@ class Module(Executable):
         assert isinstance(t, ast.Module)
         self.t = t
         self.name = name
+    def pre(self, arg_types):
+        assert not arg_types
+        return []
 
 class Function(Executable):
     def __init__(self, t):
         Executable.__init__(self)
         assert isinstance(t, ast.FunctionDef)
         self.t = t
+    @property
+    def name(self):
+        return self.t.name
+    def pre(self, arg_types):
+        assert not self.t.args.vararg
+        assert not self.t.args.kwarg
+        assert not self.t.args.defaults
+        this = []
+        this.append(lambda bs, this: isa.pop(registers.rdi))
+        assert len(arg_types) == len(self.t.args.args), [arg_types, self.t.args.args]
+        for arg_type, t in zip(arg_types, self.t.args.args):
+            assert isinstance(t, ast.Name)
+            assert isinstance(t.ctx, ast.Param)
+            def _(bs, this, arg_type=arg_type):
+                bs.flow.stack.append(arg_type)
+            this.append(ast.Assign(
+                targets=[ast.Name(id=t.id, ctx=ast.Store())],
+                value=_,
+            ))
+        this.append(lambda bs, this: isa.push(registers.rdi))
+        return this
 
 # separate this into block info
 #     program, code
@@ -78,7 +104,7 @@ class Flow(object):
         except KeyError:
             if len(self.vars) == self.space:
                 raise MemoryError # hehe
-            self.vars[name] = len(self.vars)* 8
+            self.vars[name] = len(self.vars) * 8
             return self.get_var_loc(name)
     def set_var_type(self, name, type):
         self.var_type_impl[name] = type
@@ -101,7 +127,7 @@ class BlockStatus(object):
         self.code = self.program.get_stream()
     
     def finalise(self):
-        while False: #True:
+        while True:
             old = self.code
             res = self.program.get_stream()
             for i in xrange(len(old)):
@@ -116,7 +142,7 @@ class BlockStatus(object):
                 else:
                     res.add(old[i])
             if len(res) < len(old):
-                if DEBUG:
+                if DEBUG and 0:
                     print "DECREASE", len(res), len(old)
                     for i in xrange(10):
                         print
@@ -137,7 +163,7 @@ class BlockStatus(object):
 def debug(program, name):
     if DEBUG:
         print "start", name
-        program.print_code()
+        program.print_code(pro=True, epi=True)
         print "end", name
 
 def memoize(f):
@@ -147,6 +173,8 @@ def memoize(f):
             cache[args] = f(*args)
         return cache[args]
     return _
+
+functions = []
 
 def compile(bs, stack):
     while True:
@@ -166,8 +194,17 @@ def compile(bs, stack):
         elif isinstance(t, ast.Module):
             assert False
         elif isinstance(t, ast.FunctionDef):
-            assert False
-            functions[t.name] = Function(t)
+            def _(bs, this, t=t):
+                key = len(functions)
+                functions.append(Function(t))
+                bs.code += isa.mov(registers.rax, key)
+                bs.code += isa.push(registers.rax)
+                bs.flow.stack.append(type_impl.Function)
+            # could be optimized
+            this.append(ast.Assign(
+                targets=[ast.Name(id=t.name, ctx=ast.Store())],
+                value=_,
+            ))
         elif isinstance(t, ast.AugAssign):
             this.append(ast.Assign(
                 targets=[t.target],
@@ -289,7 +326,7 @@ def compile(bs, stack):
                 return p.inst_addr()
             
             @memoize
-            def make_c(flow, t=t, stack=stack):
+            def make_c(flow, stack=stack):
                 bs = BlockStatus(flow.clone())
                 removed = bs.flow.ctrl_stack.pop()
                 assert removed is mine
@@ -354,7 +391,7 @@ def compile(bs, stack):
                     elif isinstance(rdi_type, type(type_impl.Float)):
                         bs.code += isa.mov(registers.rax, util.print_double_addr)
                     else:
-                        assert False
+                        bs.code += isa.mov(registers.rax, util.print_string_addr)
                     bs.code += isa.call(registers.rax)
             if t.nl:
                 @this.append
@@ -395,19 +432,55 @@ def compile(bs, stack):
                 else: assert False, t.op
                 
                 this.append(r)
-        elif isinstance(t, ast.Call) and 0:
+        elif isinstance(t, ast.Call):
             assert not t.keywords
             assert not t.starargs
             assert not t.kwargs
+            
             for arg in t.args:
-                bs = compile(bs, arg)
-            regs = [registers.rdi, registers.rsi, registers.rdx, registers.rcx][:len(t.args)]
-            for arg in t.args:
-                bs.code += isa.pop(regs.pop())
-                rax_type = bs.flow.stack.pop() # XXX not rax
-            functions[t.func.id].add_call(bs.code)
-            bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(rax_type)
+                this.append(arg)
+            
+            this.append(t.func)
+            
+            @memoize
+            def make_c(flow, stack=stack):
+                bs = BlockStatus(flow.clone())
+                removed = bs.flow.ctrl_stack.pop()
+                assert removed is mine
+                compile(bs, stack)
+                p = bs.finalise()
+                debug(p, "call_c")
+                return p.inst_addr()
+            
+            def make_thingy(flow, data, types):
+                if DEBUG:
+                    print "call_thingy", data
+                
+                bs = BlockStatus(flow.clone())
+                
+                good = bs.program.get_unique_label()
+                
+                bs.code += isa.cmp(MemRef(registers.rsp), data)
+                bs.code += isa.je(good)
+                bs.code += isa.mov(registers.rdi, MemRef(registers.rsp))
+                util.Redirection(bs.code, lambda caller, data: caller.replace(util.get_jmp(make_thingy(bs.flow, data, types))), True)
+                bs.code += good
+                compile(bs, [[
+                    functions[data](types),
+                    lambda bs, this: util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c(bs.flow)))),
+                ]])
+                
+                p = bs.finalise()
+                debug(p, "call_thingy")
+                return p.inst_addr()
+            
+            @this.append
+            def _(bs, this, t=t):
+                assert bs.flow.stack.pop() is type_impl.Function
+                types = tuple(bs.flow.stack.pop() for a in t.args)
+                bs.code += isa.mov(registers.rdi, MemRef(registers.rsp))
+                util.Redirection(bs.code, lambda caller, data: caller.replace(util.get_jmp(make_thingy(bs.flow, data, types))), True)
+            this.append(None)
         elif isinstance(t, ast.Tuple):
             if isinstance(t.ctx, ast.Load):
                 this.extend(t.elts)
@@ -460,6 +533,24 @@ def compile(bs, stack):
             this.append(bs.flow.ctrl_stack[-1][1])
         elif isinstance(t, ast.Str):
             this.append(type_impl.Str.load_constant(t.s))
+        elif isinstance(t, ast.Return):
+            if t.value is None:
+                this.append(ast.Num(n=1001))
+            else:
+                this.append(t.value)
+            @this.append
+            def _(bs, this):
+                bs.code += isa.pop(registers.rax)
+                rax_type = bs.flow.stack.pop()
+                bs.code += isa.leave()
+                bs.code += isa.pop(registers.rdi) # return address
+                bs.code += isa.push(registers.rax)
+                bs.code += isa.push(rax_type.id)
+                bs.code += isa.push(registers.rdi) # return address
+                assert not bs.flow.stack
+                bs.code += isa.ret() # return address
+            
+            this.append(None)
         else:
             assert False, t
         stack.extend(reversed(this))
@@ -481,6 +572,8 @@ def make_root():
     bs = BlockStatus(Flow(None))
     compile(bs, [[
         main_module(),
+        lambda bs, this: bs.code.add(isa.pop(registers.rax)),
+        lambda bs, this: bs.code.add(isa.pop(registers.rax)),
         lambda bs, this: bs.code.add(isa.ret()),
     ]])
     p = bs.finalise()
