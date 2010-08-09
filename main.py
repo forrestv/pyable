@@ -27,7 +27,7 @@ class Executable(object):
         #print self.pre(arg_types)
         #print list(bs.code)
         p = bs.finalise()
-        debug(p, "exec " + self.name)
+        debug(p, "exec " + self.name + " " + repr(arg_types))
         return p
         #bs.code[enter_index] = isa.enter(len(bs.locs)*8, 0)
 
@@ -45,6 +45,7 @@ class Module(Executable):
             bs.code += isa.push(registers.rbp)
             bs.code += isa.mov(registers.rbp, registers.rsp)
             bs.code += isa.sub(registers.rsp, bs.flow.space * 8)
+            bs.code += isa.sub(registers.rbp, 80)
         return this
 
 class Function(Executable):
@@ -58,7 +59,6 @@ class Function(Executable):
     def pre(self, arg_types):
         assert not self.t.args.vararg
         assert not self.t.args.kwarg
-        assert not self.t.args.defaults
         this = []
         # isa.push(registers.rip)
         # isa.jmp(<here>)
@@ -67,12 +67,12 @@ class Function(Executable):
             bs.code += isa.pop(registers.r13) # return address
             bs.code += isa.mov(registers.r12, registers.rbp)
             bs.code += isa.mov(registers.rbp, registers.rsp)
-            #bs.code += isa.add(registers.rbp, 80)
+            bs.code += isa.sub(registers.rbp, 80)
             bs.code += isa.pop(registers.rax)
         # pop uses rsp
         # memory access uses rbp
         # we need old stack current memory access
-        assert len(arg_types) == len(self.t.args.args), [arg_types, self.t.args.args]
+        assert len(arg_types) <= len(self.t.args.args), [arg_types, self.t.args.args]
         for arg_type, t in zip(arg_types, self.t.args.args):
             assert isinstance(t, ast.Name)
             assert isinstance(t.ctx, ast.Param)
@@ -87,7 +87,13 @@ class Function(Executable):
         def _(bs, this):
             bs.code += isa.push(registers.r13) # return address
             bs.code += isa.push(registers.r12) # frame pointer
-            bs.code += isa.sub(registers.rsp, bs.flow.space * 8 + 800)
+            bs.code += isa.sub(registers.rsp, bs.flow.space * 8)
+        for t, v in zip(self.t.args.args[::-1][:len(self.t.args.args)-len(arg_types)], self.t.args.defaults[::-1]):
+            print t.id, v.n
+            this.append(ast.Assign(
+                targets=[ast.Name(id=t.id, ctx=ast.Store())],
+                value=v,
+            ))
         '''
                 bs.code += isa.pop(registers.rax)
                 rax_type = bs.flow.stack.pop()
@@ -588,6 +594,7 @@ def compile(bs, stack):
                 rax_type = bs.flow.stack.pop()
                 
                 # leave
+                bs.code += isa.add(registers.rbp, 80)
                 bs.code += isa.mov(registers.rsp, registers.rbp)
                 bs.code += isa.pop(registers.rbp)
                 
@@ -596,11 +603,16 @@ def compile(bs, stack):
                 bs.code += isa.push(registers.rax)
                 bs.code += isa.push(rax_type.id)
                 
+                
+                
                 bs.code += isa.push(registers.rdi) # return address
                 assert not bs.flow.stack, bs.flow.stack
+                
                 bs.code += isa.ret() # return address
             
             this.append(None)
+        elif isinstance(t, ast.Pass):
+            pass # haha
         else:
             assert False, t
         stack.extend(reversed(this))
