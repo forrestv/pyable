@@ -271,11 +271,15 @@ def compile(bs, stack):
                 bs.flow.stack.append(o)
         elif isinstance(t, ast.Name):
             if isinstance(t.ctx, ast.Load):
-                bs.code += isa.mov(registers.rax, MemRef(registers.rbp, bs.flow.get_var_loc(t.id)))
-                rax_type = bs.flow.get_var_type(t.id)
-                bs.code += isa.push(registers.rax)
-                bs.flow.stack.append(rax_type)
+                if t.id == 'None':
+                    this.append(type_impl.NoneType.load())
+                else:
+                    bs.code += isa.mov(registers.rax, MemRef(registers.rbp, bs.flow.get_var_loc(t.id)))
+                    rax_type = bs.flow.get_var_type(t.id)
+                    bs.code += isa.push(registers.rax)
+                    bs.flow.stack.append(rax_type)
             elif isinstance(t.ctx, ast.Store):
+                assert t.id != 'None'
                 bs.code += isa.pop(registers.rax)
                 rax_type = bs.flow.stack.pop()
                 bs.code += isa.mov(MemRef(registers.rbp, bs.flow.get_var_loc(t.id)), registers.rax)
@@ -409,8 +413,15 @@ def compile(bs, stack):
                         bs.code += isa.mov(registers.rax, util.print_int64_addr)
                     elif isinstance(rdi_type, type(type_impl.Float)):
                         bs.code += isa.mov(registers.rax, util.print_double_addr)
-                    else:
+                    elif isinstance(rdi_type, type(type_impl.Str)):
                         bs.code += isa.mov(registers.rax, util.print_string_addr)
+                    elif isinstance(rdi_type, type(type_impl.NoneType)):
+                        type_impl.Str.load_constant("None")(bs, this)
+                        assert bs.flow.stack.pop() is type_impl.Str
+                        bs.code += isa.mov(registers.rdi, registers.rax)
+                        bs.code += isa.mov(registers.rax, util.print_string_addr)
+                    else:
+                        assert False
                     bs.code += isa.call(registers.rax)
             if t.nl:
                 @this.append
@@ -587,6 +598,20 @@ def compile(bs, stack):
             this.append(None)
         elif isinstance(t, ast.Pass):
             pass # haha
+        elif isinstance(t, ast.Assert):
+            this.append(t.test)
+            @this.append
+            def _(bs, this, t=t):
+                assert bs.flow.stack.pop() is type_impl.Int
+                bs.code += isa.pop(registers.rax)
+                bs.code += isa.test(registers.rax, registers.rax)
+                skip = bs.program.get_unique_label()
+                bs.code += isa.jnz(skip)
+                compile(bs, [[
+                    ast.Print(dest=None, values=[ast.Str(t.msg.s if t.msg is not None else "assert error")], nl=True)
+                ]])
+                bs.code += isa.ud2()
+                bs.code += skip
         else:
             assert False, t
         stack.extend(reversed(this))

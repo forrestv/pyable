@@ -158,3 +158,11 @@ Str = number(_Str())
 class _Function(_Type):
     pass
 Function = number(_Function())
+
+class _NoneType(_Type):
+    def load(self):
+        def _(bs, this):
+            bs.code += isa.push(0)
+            bs.flow.stack.append(NoneType)
+        return _
+NoneType = number(_NoneType())
