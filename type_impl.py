@@ -149,7 +149,8 @@ class _Str(_Type):
     def load_constant(self, s):
         assert isinstance(s, str)
         def _(bs, this):
-            bs.code += isa.push(ctypes.cast(strings[s], ctypes.c_void_p).value)
+            bs.code += isa.mov(registers.rax, ctypes.cast(strings[s], ctypes.c_void_p).value)
+            bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Str)
         return _
 Str = number(_Str())
