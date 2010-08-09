@@ -134,12 +134,14 @@ class _Float(_Type):
     __radd__ = __add__
 Float = number(_Float())
 
-class Tuple(_Type):
+class _Tuple(_Type):
     def load_constant(self, ast):
         assert isinstance(ast)
+Tuple = number(_Tuple())
 
-class Object(_Type):
+class _Object(_Type):
     pass
+Object = number(_Object())
 
 strings = util.cdict(lambda s: ctypes.create_string_buffer(struct.pack("L", len(s)) + s))
 
@@ -150,8 +152,8 @@ class _Str(_Type):
             bs.code += isa.push(ctypes.cast(strings[s], ctypes.c_void_p).value)
             bs.flow.stack.append(Str)
         return _
-Str = _Str()
+Str = number(_Str())
 
 class _Function(_Type):
     pass
-Function = _Function()
+Function = number(_Function())
