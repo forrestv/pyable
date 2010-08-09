@@ -1,0 +1,17 @@
+store strings <= 8 bytes inline
+
+
+
+okay
+
+a call calls a chain of redirections
+
+OMG
+
+
+
+pop rdi
+cmp rdi, 78012761213
+jne skip
+ca
+skip:
