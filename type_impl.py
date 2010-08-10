@@ -166,3 +166,53 @@ class _NoneType(_Type):
             bs.flow.stack.append(NoneType)
         return _
 NoneType = number(_NoneType())
+
+class _List(_Type):
+    def append(self):
+        # [self, element]
+        def _(bs, this):
+            # r12 = element pointer
+            # r13 = list pointer
+            # r14 = new len
+            
+            bs.code += isa.pop(registers.r12)
+            r12_type = bs.flow.stack.pop()
+            bs.code += isa.pop(registers.r13)
+            r13_type = bs.flow.stack.pop()
+            
+            assert r13_type is List
+            
+            bs.code += isa.mov(registers.r14, MemRef(registers.r13))
+            bs.code += isa.add(registers.r14, 1)
+            
+            bs.code += isa.cmp(registers.r11, MemRef(registers.rax, 8))
+            skip_realloc = bs.program.get_unique_label()
+            bs.code += isa.jle(skip_realloc)
+            
+            # allocated = allocated * 2 + 1
+            bs.code += isa.mov(registers.rax, util.realloc_addr)
+            bs.code += isa.mov(registers.rdi, MemRef(registers.r13, 16))
+            bs.code += isa.mov(registers.rsi, MemRef(registers.r13, 8))
+            bs.code += isa.mul(registers.rsi, 2)
+            bs.code += isa.add(registers.rsi, 1)
+            bs.code += isa.mov(MemRef(registers.r13, 8), registers.rdi)
+            bs.code += isa.mul(registers.rsi, 16)
+            bs.code += isa.call(registers.rax)
+            bs.code += isa.mov(MemRef(registers.r13, 16), registers.rax)
+            
+            bs.code += skip_realloc
+            
+            #bs.code += isa.inc(MemRef(
+            
+    def load(self):
+        def _(bs, this):
+            bs.code += isa.mov(registers.rax, util.malloc_addr)
+            bs.code += isa.mov(registers.rdi, 24)
+            bs.code += isa.call(registers.rax)
+            bs.code += isa.mov(MemRef(registers.rax), 0) # length
+            bs.code += isa.mov(MemRef(registers.rax, 8), 0) # allocated length
+            bs.code += isa.mov(MemRef(registers.rax, 16), 0) # pointer
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(List)
+        return _
+List = number(_List())

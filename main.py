@@ -274,6 +274,7 @@ def compile(bs, stack):
                 if t.id == 'None':
                     this.append(type_impl.NoneType.load())
                 else:
+                    pos = bs.flow
                     bs.code += isa.mov(registers.rax, MemRef(registers.rbp, bs.flow.get_var_loc(t.id)))
                     rax_type = bs.flow.get_var_type(t.id)
                     bs.code += isa.push(registers.rax)
@@ -393,6 +394,8 @@ def compile(bs, stack):
                     bs.code += isa.jne(label)
                 elif isinstance(op, ast.NotEq):
                     bs.code += isa.je(label)
+                elif isinstance(op, ast.Is): # XXX
+                    bs.code += isa.jne(label)
                 else:
                     assert False, op
                 bs.code += isa.pop(registers.rax)
@@ -577,7 +580,7 @@ def compile(bs, stack):
             this.append(type_impl.Str.load_constant(t.s))
         elif isinstance(t, ast.Return):
             if t.value is None:
-                this.append(ast.Num(n=1001))
+                this.append(ast.Name(id='None', ctx=ast.Load()))
             else:
                 this.append(t.value)
             @this.append
@@ -612,6 +615,39 @@ def compile(bs, stack):
                 ]])
                 bs.code += isa.ud2()
                 bs.code += skip
+        elif isinstance(t, ast.List):
+            assert isinstance(t.ctx, ast.Load)
+            this.append(type_impl.List.load())
+            for e in t.elts:
+                this.append(e)
+                @this.append
+                def _(bs, this):
+                    bs.code += isa.pop(registers.rax)
+                    rax_type = bs.stack.pop()
+                    bs.code += isa.pop(registers.rdi)
+                    rdi_type = bs.stack.pop()
+                    bs.code += isa.push(registers.rdi)
+                    bs.stack.append(rdi_type)
+                    bs.code += isa.push(registers.rdi)
+                    bs.stack.append(rdi_type)
+                    bs.code += isa.push(registers.rax)
+                    bs.stack.append(rax_type)
+                this.append(type_impl.List.append())
+        elif isinstance(t, ast.Import):
+            for name in t.names:
+                assert isinstance(name, ast.alias)
+                def _(bs, this, name=name):
+                    key = len(functions)
+                    functions.append(Module(t))
+                    bs.code += isa.mov(registers.rax, key)
+                    bs.code += isa.push(registers.rax)
+                    bs.flow.stack.append(type_impl.Module)
+                # could be optimized
+                asname = name.name if name.asname is None else name.asname
+                this.append(ast.Assign(
+                    targets=[ast.Name(id=asname, ctx=ast.Store())],
+                    value=_,
+                ))
         else:
             assert False, t
         stack.extend(reversed(this))

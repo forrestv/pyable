@@ -1,15 +1,3 @@
-def range(start, end=None, step=1):
-    assert step
-    if end is None:
-        end = start
-        start = 0
-    result = []
-    i = start
-    while (i < end and step > 0) or (i > end and step < 0):
-        result.append(i)
-        i += step
-    return result
-
 LOOPS = 1000000
 
 __version__ = "1.1"

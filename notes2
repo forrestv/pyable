@@ -1,17 +1,43 @@
 store strings <= 8 bytes inline
 
+---
+
+namespaces
+
+save the flows with a number
+mark them if used, otherwise we can discard
+
+uses -
+    function declaration
+    locals() globals() ?
 
 
-okay
+---
 
-a call calls a chain of redirections
+for a in b:
+   c(a)
 
-OMG
+_ = iter(b)
+while True:
+    try:
+        a = b.next()
+    except StopIteration:
+        break
+    c(a)
 
 
 
-pop rdi
-cmp rdi, 78012761213
-jne skip
-ca
-skip:
+....
+_ = iter(b)
+goto b
+
+-- b
+try:
+    a = b.next()
+except StopIteration:
+    goto c
+body
+goto b
+
+-- c
+...
