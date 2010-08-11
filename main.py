@@ -449,20 +449,15 @@ def compile(desc, flow, stack=None, this=None):
             this.append(t.right)
             @this.append
             def _(bs, this, t=t):
-                bs.code += isa.pop(registers.rbx)
-                rbx_type = bs.flow.stack.pop().copy()
-                bs.code += isa.pop(registers.rdi)
-                rdi_type = bs.flow.stack.pop().copy()
+                right_type = bs.flow.stack.pop()
+                left_type = bs.flow.stack.pop()
                 
-                rdi_type.register = registers.rdi
-                rbx_type.register = registers.rbx
-                
-                if isinstance(t.op, ast.Add): r = (rdi_type + rbx_type)
-                elif isinstance(t.op, ast.Sub): r = (rdi_type - rbx_type)
-                elif isinstance(t.op, ast.Mult): r = (rdi_type * rbx_type)
-                elif isinstance(t.op, ast.Div): r = (rdi_type / rbx_type)
-                elif isinstance(t.op, ast.FloorDiv): r = (rdi_type // rbx_type)
-                elif isinstance(t.op, ast.Mod): r = (rdi_type % rbx_type)
+                if isinstance(t.op, ast.Add): r = (left_type + right_type)
+                elif isinstance(t.op, ast.Sub): r = (left_type - right_type)
+                elif isinstance(t.op, ast.Mult): r = (left_type * right_type)
+                elif isinstance(t.op, ast.Div): r = (left_type / right_type)
+                elif isinstance(t.op, ast.FloorDiv): r = (left_type // right_type)
+                elif isinstance(t.op, ast.Mod): r = (left_type % right_type)
                 else: assert False, t.op
                 
                 this.append(r)
@@ -641,6 +636,16 @@ def compile(desc, flow, stack=None, this=None):
                     targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
                     value=ast.Call(func=ast.Name(id='__import__', ctx=ast.Load()), args=[ast.Str(s='a')], keywords=[], starargs=None, kwargs=None)
                 ))
+        elif isinstance(t, ast.Attribute):
+            if isinstance(t.ctx, ast.Load):
+                this.append(t.value)
+                @this.append
+                def _(bs, this, t=t):
+                    this.append(bs.flow.stack[-1].getattr_const_string(t.attr))
+            elif isinstance(t.ctx, ast.Store):
+                assert False
+            else:
+                assert False
         else:
             assert False, t
         stack.extend(reversed(this))

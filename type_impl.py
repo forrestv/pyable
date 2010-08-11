@@ -22,9 +22,29 @@ class _Type(object):
         return self.__class__()
     def __repr__(self):
         return self.__class__.__name__
+    def getattr(self):
+        return None
+    def getattr_const_string(self):
+        return None
 Type = number(_Type())
 
 class _Int(_Type):
+    def getattr_const_string(self, s):
+        def _(bs, this):
+            assert bs.flow.stack[-1] is self
+            if s == "numerator":
+                pass
+            elif s == "denominator":
+                bs.code += isa.pop(registers.rax)
+                bs.code += isa.push(1)
+            elif s == "real":
+                pass
+            elif s == "imag":
+                bs.code += isa.pop(registers.rax)
+                bs.code += isa.push(0)
+            else:
+                assert False
+        return _
     def load_constant(self, value):
         assert isinstance(value, int)
         value = int(value)
@@ -39,10 +59,10 @@ class _Int(_Type):
     def __add__(self, other):
         if isinstance(other, type(Int)):
             def _(bs, this):
-                assert self is not other
-                assert self.register is not other.register
-                bs.code += isa.add(self.register, other.register)
-                bs.code += isa.push(self.register)
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.pop(registers.rax)
+                bs.code += isa.add(registers.rax, registers.rbx)
+                bs.code += isa.push(registers.rax)
                 bs.flow.stack.append(Int)
             return _
         return NotImplemented
@@ -51,8 +71,10 @@ class _Int(_Type):
     def __sub__(self, other):
         if isinstance(other, type(Int)):
             def _(bs, this):
-                bs.code += isa.sub(self.register, other.register)
-                bs.code += isa.push(self.register)
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.pop(registers.rax)
+                bs.code += isa.sub(registers.rax, registers.rbx)
+                bs.code += isa.push(registers.rax)
                 bs.flow.stack.append(Int)
             return _
         return NotImplemented
@@ -60,8 +82,10 @@ class _Int(_Type):
     def __mul__(self, other):
         if isinstance(other, type(Int)):
             def _(bs, this):
-                bs.code += isa.imul(self.register, other.register)
-                bs.code += isa.push(self.register)
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.pop(registers.rax)
+                bs.code += isa.imul(registers.rax, registers.rbx)
+                bs.code += isa.push(registers.rax)
                 bs.flow.stack.append(Int)
             return _
         return NotImplemented
@@ -164,7 +188,6 @@ Function = number(_Function())
 class _NoneType(_Type):
     def load(self):
         def _(bs, this):
-            bs.code += isa.push(0)
             bs.flow.stack.append(NoneType)
         return _
 NoneType = number(_NoneType())
