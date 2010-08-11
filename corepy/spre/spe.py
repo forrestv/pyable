@@ -1494,13 +1494,13 @@ class Program(object):
     return
 
 
-  def print_code(self, pro = False, epi = False, binary = False, hex = False):
+  def print_code(self, pro = False, epi = False, binary = False, hex = False, line_numbers = True):
     import corepy.lib.printer as printer
     if pro or epi or hex or binary:
       self.cache_code()
     module = printer.Default(show_prologue = pro, show_epilogue = epi,
                              show_binary = binary, show_hex = hex,
-                             line_numbers = True)
+                             line_numbers = line_numbers)
     printer.PrintProgram(self, module)
     return
       

@@ -20,6 +20,8 @@ def number(inst):
 class _Type(object):
     def copy(self):
         return self.__class__()
+    def __repr__(self):
+        return self.__class__.__name__
 Type = number(_Type())
 
 class _Int(_Type):

@@ -187,8 +187,6 @@ def dump(node, annotate_fields=True, include_attributes=False):
         elif isinstance(node, list):
             return '[\n%s%s\n%s]' % (' '*indent,(',\n'+' '*indent).join(_format(x, indent+4) for x in node), ' '*indent)
         return repr(node)
-    if not isinstance(node, ast.AST):
-        raise TypeError('expected AST, got %r' % node.__class__.__name__)
     return _format(node)
 
 if __name__ == "__main__":
