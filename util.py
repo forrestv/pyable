@@ -8,6 +8,14 @@ import corepy.arch.x86_64.isa as isa
 import corepy.arch.x86_64.types.registers as registers
 import corepy.arch.x86_64.platform as platform
 
+DEBUG = 0
+
+def debug(program, name):
+    if DEBUG:
+        print "start", name
+        program.print_code(pro=True, epi=True, line_numbers=False)
+        print "end", name
+
 class Program(platform.Program):
     def __init__(self, *args, **kwargs):
         platform.Program.__init__(self, *args, **kwargs)
@@ -29,6 +37,14 @@ class cdict(dict):
     def __missing__(self, item):
         self[item] = value = self.getter(item)
         return value
+
+def memoize(f):
+    cache = {}
+    def _(*args):
+        if args not in cache:
+            cache[args] = f(*args)
+        return cache[args]
+    return _
 
 class fake_int(long):
     def __lt__(self, other):

@@ -2,12 +2,14 @@ from __future__ import division
 
 import struct
 import ctypes
+import ast
 
 import corepy.arch.x86_64.isa as isa
 import corepy.arch.x86_64.types.registers as registers
 from corepy.arch.x86_64.lib.memory import MemRef
 
 import util
+import compiler
 
 id_to_type = {}
 
@@ -28,6 +30,22 @@ class _Type(object):
         return None
 Type = number(_Type())
 
+class _IntAbsMeth(_Type):
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs, this):
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rdi)
+            bs.code += isa.mov(registers.rax, registers.rdi)
+            bs.code += isa.cqto()
+            bs.code += isa.mov(registers.rax, registers.rdx)
+            bs.code += isa.xor(registers.rax, registers.rdi)
+            bs.code += isa.sub(registers.rax, registers.rdx)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Int)
+        return _
+IntAbs = number(_IntAbsMeth)
+
 class _Int(_Type):
     def getattr_const_string(self, s):
         def _(bs, this):
@@ -42,6 +60,10 @@ class _Int(_Type):
             elif s == "imag":
                 bs.code += isa.pop(registers.rax)
                 bs.code += isa.push(0)
+            elif s == "__abs__":
+                assert bs.flow.stack.pop() is self
+                bs.code += isa.pop(registers.rax)
+                # method needs to contain this and the pointer
             else:
                 assert False
         return _
@@ -94,9 +116,11 @@ class _Int(_Type):
     def __div__(self, other):
         if isinstance(other, type(Int)):
             def _(bs, this):
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.pop(registers.rax)
                 bs.code += isa.mov(registers.rdx, 0)
-                bs.code += isa.mov(registers.rax, self.register)
-                bs.code += isa.idiv(other.register)
+                bs.code += isa.mov(registers.rax, registers.rax)
+                bs.code += isa.idiv(registers.rbx)
                 bs.code += isa.push(registers.rax)
                 bs.flow.stack.append(Int)
             return _
@@ -105,9 +129,11 @@ class _Int(_Type):
     def __floordiv__(self, other):
         if isinstance(other, type(Int)):
             def _(bs, this):
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.pop(registers.rax)
                 bs.code += isa.mov(registers.rdx, 0)
-                bs.code += isa.mov(registers.rax, self.register)
-                bs.code += isa.idiv(other.register)
+                bs.code += isa.mov(registers.rax, registers.rax)
+                bs.code += isa.idiv(registers.rbx)
                 bs.code += isa.push(registers.rax)
                 bs.flow.stack.append(Int)
             return _
@@ -116,9 +142,11 @@ class _Int(_Type):
     def __mod__(self, other):
         if isinstance(other, type(Int)):
             def _(bs, this):
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.pop(registers.rax)
                 bs.code += isa.mov(registers.rdx, 0)
-                bs.code += isa.mov(registers.rax, self.register)
-                bs.code += isa.idiv(other.register)
+                bs.code += isa.mov(registers.rax, registers.rax)
+                bs.code += isa.idiv(registers.rbx)
                 bs.code += isa.push(registers.rdx)
                 bs.flow.stack.append(Int)
             return _
@@ -139,9 +167,11 @@ class _Float(_Type):
     def __add__(self, other):
         if isinstance(other, type(Float)):
             def _(bs, this):
-                bs.code += isa.push(self.register)
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.pop(registers.rax)
+                bs.code += isa.push(registers.rax)
                 bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
-                bs.code += isa.mov(MemRef(registers.rsp), other.register)
+                bs.code += isa.mov(MemRef(registers.rsp), registers.rbx)
                 bs.code += isa.movsd(registers.xmm1, MemRef(registers.rsp))
                 bs.code += isa.addsd(registers.xmm0, registers.xmm1)
                 bs.code += isa.movsd(MemRef(registers.rsp), registers.xmm0)
@@ -149,8 +179,10 @@ class _Float(_Type):
             return _
         elif isinstance(other, type(Int)):
             def _(bs, this):
-                bs.code += isa.cvtsi2sd(registers.xmm1, other.register)
-                bs.code += isa.push(self.register)
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.pop(registers.rax)
+                bs.code += isa.cvtsi2sd(registers.xmm1, registers.rbx)
+                bs.code += isa.push(registers.rax)
                 bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
                 bs.code += isa.addsd(registers.xmm0, registers.xmm1)
                 bs.code += isa.movsd(MemRef(registers.rsp), registers.xmm0)
@@ -181,8 +213,57 @@ class _Str(_Type):
         return _
 Str = number(_Str())
 
+functions = []
+
 class _Function(_Type):
-    pass
+    def __call__(self, arg_types):
+        def _(bs, this):
+            @util.memoize
+            def make_c(flow, stack=list(bs.call_stack)):
+                #print util.dump(stack)
+                def _(bs, this, stack=stack):
+                    bs.code += isa.pop(registers.rax)
+                    assert bs.flow.stack.pop() is self
+                    for arg_type in arg_types:
+                        bs.code += isa.pop(registers.rax)
+                        assert bs.flow.stack.pop() is arg_type
+                    bs.code += isa.push(registers.r12)
+                    #bs.flow.stack.append(id_to_type[registers.r13])
+                    bs.flow.stack.append(Int)
+                return compiler.translate("call_c", bs.flow, stack=stack, this=[
+                    _,
+                ])
+            
+            make_thingy_holder = []
+            def make_thingy(flow, data, types, make_c=make_c, make_thingy_holder=make_thingy_holder):
+                #if DEBUG:
+                #    print "call_thingy", data
+                
+                def _(bs, this):
+                    good = bs.program.get_unique_label()
+                    
+                    bs.code += isa.cmp(MemRef(registers.rsp), data)
+                    bs.code += isa.je(good)
+                    bs.code += isa.mov(registers.rdi, MemRef(registers.rsp))
+                    util.Redirection(bs.code, lambda caller, data: caller.replace(util.get_jmp(make_thingy_holder[0](bs.flow, data, types))), True)
+                    bs.code += good
+                
+                return compiler.translate("call_thingy", flow, this=[
+                    _,
+                    functions[data](types),
+                    lambda bs, this: util.Redirection(bs.code, lambda caller: caller.replace(util.get_jmp(make_c(bs.flow)))),
+                    None,
+                ])
+            make_thingy_holder.append(make_thingy)
+            
+            assert bs.flow.stack[-1] is self
+            types = tuple(bs.flow.stack[-2 - i] for i, arg_type in enumerate(arg_types))
+            bs.code += isa.mov(registers.rdi, MemRef(registers.rsp))
+            util.Redirection(bs.code, lambda caller, data: caller.replace(util.get_jmp(make_thingy(bs.flow, data, types))), True)
+            #print "hi"
+        
+            this.append(None)
+        return _
 Function = number(_Function())
 
 class _NoneType(_Type):
