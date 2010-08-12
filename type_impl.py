@@ -37,14 +37,14 @@ class _IntAbsMeth(_Type):
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.rdi)
             bs.code += isa.mov(registers.rax, registers.rdi)
-            bs.code += isa.cqto()
+            bs.code += isa.cqo()
             bs.code += isa.mov(registers.rax, registers.rdx)
             bs.code += isa.xor(registers.rax, registers.rdi)
             bs.code += isa.sub(registers.rax, registers.rdx)
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Int)
         return _
-IntAbs = number(_IntAbsMeth)
+IntAbsMeth = number(_IntAbsMeth())
 
 class _Int(_Type):
     def getattr_const_string(self, s):
@@ -62,7 +62,8 @@ class _Int(_Type):
                 bs.code += isa.push(0)
             elif s == "__abs__":
                 assert bs.flow.stack.pop() is self
-                bs.code += isa.pop(registers.rax)
+                #bs.code += isa.pop(registers.rax)
+                bs.flow.stack.append(IntAbsMeth)
                 # method needs to contain this and the pointer
             else:
                 assert False
