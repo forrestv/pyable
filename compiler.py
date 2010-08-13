@@ -75,7 +75,7 @@ class Function(Executable):
             assert isinstance(t.ctx, ast.Param)
             def _(bs, this, arg_type=arg_type, i=i):
                 bs.flow.stack.append(arg_type)
-                bs.code += isa.push(MemRef(registers.rbp, 24 + 8 * i))
+                bs.code += isa.push(MemRef(registers.rbp, 16 + 8 * i))
             this.append(ast.Assign(
                 targets=[ast.Name(id=t.id, ctx=ast.Store())],
                 value=_,
@@ -453,14 +453,23 @@ def translate(desc, flow, stack=None, this=None):
             assert not t.starargs
             assert not t.kwargs
             
-            for arg in t.args:
-                this.append(arg)
-            
             this.append(t.func)
             
             @this.append
             def _(bs, this, t=t):
-                this.append(bs.flow.stack[-1](tuple(bs.flow.stack[-2 - i] for i, a in enumerate(t.args))))
+                if len(t.args) == 1 and isinstance(t.args[0], (ast.Num, ast.Str)):
+                    c = bs.flow.stack[-1].call_const(t.args[0])
+                    if c is not None:
+                        this.append(c)
+                        return
+                
+                for arg in t.args:
+                    this.append(arg)
+                
+                @this.append
+                def _(bs, this, t=t):
+                    this.append(bs.flow.stack[-1 - len(t.args)](tuple(bs.flow.stack[-1 - i] for i, a in enumerate(t.args))))
+            
         elif isinstance(t, ast.Tuple):
             if isinstance(t.ctx, ast.Load):
                 this.extend(t.elts)
@@ -575,6 +584,16 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.Import):
             for name in t.names:
                 assert isinstance(name, ast.alias)
+                if name.name == "ctypes":
+                    def _(bs, this):
+                        import myctypes
+                        bs.code += isa.push(0)
+                        bs.flow.stack.append(myctypes.CtypesModule)
+                    this.append(ast.Assign(
+                        targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
+                        value=_
+                    ))
+                    continue
                 this.append(ast.Assign(
                     targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
                     value=ast.Call(func=ast.Name(id='__import__', ctx=ast.Load()), args=[ast.Str(s=name.name)], keywords=[], starargs=None, kwargs=None)

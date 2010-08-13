@@ -26,7 +26,9 @@ class _Type(object):
         return self.__class__.__name__
     def getattr(self):
         return None
-    def getattr_const_string(self):
+    def getattr_const_string(self, s):
+        return None
+    def call_const(self, c):
         return None
 Type = number(_Type())
 
@@ -224,10 +226,10 @@ class _Function(_Type):
                 #print util.dump(stack)
                 def _(bs, this, stack=stack):
                     bs.code += isa.pop(registers.rax)
-                    assert bs.flow.stack.pop() is self
                     for arg_type in arg_types:
                         bs.code += isa.pop(registers.rax)
                         assert bs.flow.stack.pop() is arg_type
+                    assert bs.flow.stack.pop() is self
                     bs.code += isa.push(registers.r12)
                     #bs.flow.stack.append(id_to_type[registers.r13])
                     bs.flow.stack.append(Int)
@@ -237,15 +239,15 @@ class _Function(_Type):
             
             make_thingy_holder = []
             def make_thingy(flow, data, types, make_c=make_c, make_thingy_holder=make_thingy_holder):
-                #if DEBUG:
-                #    print "call_thingy", data
+                if util.DEBUG:
+                    print "call_thingy", data
                 
                 def _(bs, this):
                     good = bs.program.get_unique_label()
                     
-                    bs.code += isa.cmp(MemRef(registers.rsp), data)
+                    bs.code += isa.cmp(MemRef(registers.rsp, 8*len(arg_types)), data)
                     bs.code += isa.je(good)
-                    bs.code += isa.mov(registers.rdi, MemRef(registers.rsp))
+                    bs.code += isa.mov(registers.rdi, MemRef(registers.rsp, 8*len(arg_types)))
                     util.Redirection(bs.code, lambda caller, data: caller.replace(util.get_jmp(make_thingy_holder[0](bs.flow, data, types))), True)
                     bs.code += good
                 
@@ -257,9 +259,9 @@ class _Function(_Type):
                 ])
             make_thingy_holder.append(make_thingy)
             
-            assert bs.flow.stack[-1] is self
-            types = tuple(bs.flow.stack[-2 - i] for i, arg_type in enumerate(arg_types))
-            bs.code += isa.mov(registers.rdi, MemRef(registers.rsp))
+            assert bs.flow.stack[-1 - len(arg_types)] is self
+            types = tuple(bs.flow.stack[-1 - i] for i, arg_type in enumerate(arg_types))
+            bs.code += isa.mov(registers.rdi, MemRef(registers.rsp, 8*len(arg_types)))
             util.Redirection(bs.code, lambda caller, data: caller.replace(util.get_jmp(make_thingy(bs.flow, data, types))), True)
             #print "hi"
         
