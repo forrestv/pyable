@@ -31,6 +31,7 @@ class Executable(object):
             ],
         )
 
+
 class Module(Executable):
     def __init__(self, t, name):
         Executable.__init__(self)
@@ -65,6 +66,7 @@ class Function(Executable):
         def _(bs, this):
             bs.code += isa.push(registers.rbp)
             bs.code += isa.mov(registers.rbp, registers.rsp)
+            bs.code += isa.or_(registers.rsp, 0xf) # adds at most 15
             bs.code += isa.sub(registers.rsp, bs.flow.space * 8)
         # pop uses rsp
         # memory access uses rbp
@@ -96,7 +98,7 @@ class Function(Executable):
 class Flow(object):
     def __init__(self, executable):
         self.executable = executable
-        self.space = 1000
+        self.space = 101
         self.vars = {}
         self.var_type_impl = {}
         self.stack = []
@@ -445,6 +447,7 @@ def translate(desc, flow, stack=None, this=None):
                 elif isinstance(t.op, ast.Div): r = (left_type / right_type)
                 elif isinstance(t.op, ast.FloorDiv): r = (left_type // right_type)
                 elif isinstance(t.op, ast.Mod): r = (left_type % right_type)
+                elif isinstance(t.op, ast.BitOr): r = (left_type | right_type)
                 else: assert False, t.op
                 
                 this.append(r)

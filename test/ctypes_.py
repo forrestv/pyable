@@ -1,4 +1,6 @@
 import ctypes
 
-ctypes.CDLL("libc.so.6").putchar(104)
-ctypes.CDLL("libc.so.6").putchar(10)
+c = ctypes.CDLL("libc.so.6")
+
+c.putchar(104)
+c.putchar(10)

@@ -154,6 +154,17 @@ class _Int(_Type):
                 bs.flow.stack.append(Int)
             return _
         return NotImplemented
+    
+    def __or__(self, other):
+        if isinstance(other, type(Int)):
+            def _(bs, this):
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.pop(registers.rax)
+                bs.code += isa.or_(registers.rax, registers.rbx)
+                bs.code += isa.push(registers.rax)
+                bs.flow.stack.append(Int)
+            return _
+        return NotImplemented
 Int = number(_Int())
 
 class _Float(_Type):
