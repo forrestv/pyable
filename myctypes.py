@@ -14,6 +14,7 @@ float_regs = [registers.xmm0, registers.xmm1, registers.xmm2, registers.xmm3, re
 
 def wrap_func(func_):
     class _FuncPtr(type_impl._Type):
+        size = 0
         func = func_
         def __call__(self, arg_types):
             def _(bs, this):
@@ -43,6 +44,7 @@ def wrap_func(func_):
 
 def load_cdll(name):
     class _CDLLInst(type_impl._Type):
+        size = 0
         cdll = ctypes.CDLL(name)
         def getattr_const_string(self, s):
             def _(bs, this):
@@ -52,6 +54,7 @@ def load_cdll(name):
     return type_impl.number(_CDLLInst())
 
 class _CDLL(type_impl._Type):
+    size = 0
     def call_const(self, a):
         assert isinstance(a, ast.Str)
         def _(bs, this):
@@ -62,6 +65,7 @@ class _CDLL(type_impl._Type):
 CDLL = type_impl.number(_CDLL())
 
 class _CtypesModule(type_impl._Type):
+    size = 0
     def getattr_const_string(self, s):
         if s == "CDLL":
             def _(bs, this):

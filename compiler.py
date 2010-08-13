@@ -90,16 +90,12 @@ class Function(Executable):
             ))
         return this
 
-# separate this into block info
-#     program, code
-# and persistant flow data
-#     variable types, allocations
-
 class Flow(object):
     def __init__(self, executable):
         self.executable = executable
-        self.space = 101
+        self.space = 100
         self.vars = {}
+        self.spaces = [0] * self.space
         self.var_type_impl = {}
         self.stack = []
         self.ctrl_stack = []
@@ -135,9 +131,10 @@ class Flow(object):
         r = Flow(self.executable)
         r.space = self.space
         r.vars.update(self.vars)
+        r.spaces[:] = self.spaces
         r.var_type_impl.update(self.var_type_impl)
-        r.stack[:] = self.stack[:]
-        r.ctrl_stack[:] = self.ctrl_stack[:]
+        r.stack[:] = self.stack
+        r.ctrl_stack[:] = self.ctrl_stack
         return r
 
 class BlockStatus(object):
@@ -271,17 +268,18 @@ def translate(desc, flow, stack=None, this=None):
                 if t.id == 'None':
                     this.append(type_impl.NoneType.load())
                 else:
-                    pos = bs.flow
-                    bs.code += isa.mov(registers.rax, MemRef(registers.rbp, bs.flow.get_var_loc(t.id)))
-                    rax_type = bs.flow.get_var_type(t.id)
-                    bs.code += isa.push(registers.rax)
-                    bs.flow.stack.append(rax_type)
+                    type = bs.flow.get_var_type(t.id)
+                    for i in xrange(type.size):
+                        bs.code += isa.mov(registers.rax, MemRef(registers.rbp, bs.flow.get_var_loc(t.id) + i * 8))
+                        bs.code += isa.push(registers.rax)
+                    bs.flow.stack.append(type)
             elif isinstance(t.ctx, ast.Store):
                 assert t.id != 'None'
-                bs.code += isa.pop(registers.rax)
-                rax_type = bs.flow.stack.pop()
-                bs.code += isa.mov(MemRef(registers.rbp, bs.flow.get_var_loc(t.id)), registers.rax)
-                bs.flow.set_var_type(t.id, rax_type)
+                type = bs.flow.stack.pop()
+                bs.flow.set_var_type(t.id, type)
+                for i in xrange(type.size):
+                    bs.code += isa.pop(registers.rax)
+                    bs.code += isa.mov(MemRef(registers.rbp, bs.flow.get_var_loc(t.id) + i * 8), registers.rax)
             else:
                 assert False, t.ctx
         elif isinstance(t, ast.If):
@@ -302,7 +300,7 @@ def translate(desc, flow, stack=None, this=None):
             def _(bs, this):
                 bs.code += isa.pop(registers.rax)
                 rax_type = bs.flow.stack.pop()
-                assert isinstance(rax_type, type(type_impl.Int)), rax_type
+                assert rax_type is type_impl.Int, rax_type
                 bs.code += isa.test(registers.rax, registers.rax)
                 skip = bs.program.get_unique_label()
                 bs.code += isa.jz(skip)
@@ -402,13 +400,13 @@ def translate(desc, flow, stack=None, this=None):
                 def _(bs, this,value=value):
                     bs.code += isa.pop(registers.rdi)
                     rdi_type = bs.flow.stack.pop()
-                    if isinstance(rdi_type, type(type_impl.Int)):
+                    if rdi_type is type_impl.Int:
                         bs.code += isa.mov(registers.rax, util.print_int64_addr)
-                    elif isinstance(rdi_type, type(type_impl.Float)):
+                    elif rdi_type is type_impl.Float:
                         bs.code += isa.mov(registers.rax, util.print_double_addr)
-                    elif isinstance(rdi_type, type(type_impl.Str)):
+                    elif rdi_type is type_impl.Str:
                         bs.code += isa.mov(registers.rax, util.print_string_addr)
-                    elif isinstance(rdi_type, type(type_impl.NoneType)):
+                    elif rdi_type is type_impl.NoneType:
                         type_impl.Str.load_constant("None")(bs, this)
                         assert bs.flow.stack.pop() is type_impl.Str
                         bs.code += isa.mov(registers.rdi, registers.rax)
@@ -425,14 +423,10 @@ def translate(desc, flow, stack=None, this=None):
             this.append(t.operand)
             @this.append
             def _(bs, this, t=t):
-                bs.code += isa.pop(registers.rax)
-                rax_type = bs.flow.stack.pop()
-                if isinstance(rax_type, type(type_impl.Int)) and isinstance(t.op, ast.USub):
-                    bs.code += isa.neg(registers.rax)
-                else:
-                    assert False, t.op
-                bs.code += isa.push(registers.rax)
-                bs.flow.stack.append(rax_type)
+                type = bs.flow.stack.pop()
+                if isinstance(t.op, ast.USub): r = -type
+                else: assert False, t.op
+                this.append(r)
         elif isinstance(t, ast.BinOp):
             this.append(t.left)
             this.append(t.right)

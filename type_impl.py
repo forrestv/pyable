@@ -33,6 +33,7 @@ class _Type(object):
 Type = number(_Type())
 
 class _IntAbsMeth(_Type):
+    size = 0
     def __call__(self, arg_types):
         assert not arg_types
         def _(bs, this):
@@ -49,6 +50,7 @@ class _IntAbsMeth(_Type):
 IntAbsMeth = number(_IntAbsMeth())
 
 class _Int(_Type):
+    size = 1
     def getattr_const_string(self, s):
         def _(bs, this):
             assert bs.flow.stack[-1] is self
@@ -78,7 +80,10 @@ class _Int(_Type):
         return _
     def __neg__(self):
         def _(bs, this):
+            bs.code += isa.pop(registers.rax)
             bs.code += isa.neg(registers.rax)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Int)
         return _
     
     def __add__(self, other):
@@ -168,6 +173,7 @@ class _Int(_Type):
 Int = number(_Int())
 
 class _Float(_Type):
+    size = 1
     def load_constant(self, value):
         assert isinstance(value, float)
         value = float(value)
@@ -207,6 +213,7 @@ class _Float(_Type):
 Float = number(_Float())
 
 class _Tuple(_Type):
+    size = 1
     def load_constant(self, ast):
         assert isinstance(ast)
 Tuple = number(_Tuple())
@@ -218,6 +225,7 @@ Object = number(_Object())
 strings = util.cdict(lambda s: ctypes.create_string_buffer(struct.pack("L", len(s)) + s))
 
 class _Str(_Type):
+    size = 1
     def load_constant(self, s):
         assert isinstance(s, str)
         def _(bs, this):
@@ -230,6 +238,7 @@ Str = number(_Str())
 functions = []
 
 class _Function(_Type):
+    size = 1
     def __call__(self, arg_types):
         def _(bs, this):
             @util.memoize
@@ -281,6 +290,7 @@ class _Function(_Type):
 Function = number(_Function())
 
 class _NoneType(_Type):
+    size = 0
     def load(self):
         def _(bs, this):
             bs.flow.stack.append(NoneType)
