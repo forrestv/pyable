@@ -76,7 +76,7 @@ class Function(Executable):
 class Flow(object):
     def __init__(self, executable):
         self.executable = executable
-        self.space = 100
+        self.space = 1000
         self.vars = {}
         self.spaces = [0] * self.space
         self.var_type_impl = {}
