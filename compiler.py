@@ -50,7 +50,6 @@ class Function(Executable):
         def _(bs, this):
             bs.code += isa.push(registers.rbp)
             bs.code += isa.mov(registers.rbp, registers.rsp)
-            bs.code += isa.or_(registers.rsp, 0xf) # adds at most 15
             bs.code += isa.sub(registers.rsp, bs.flow.space * 8)
         # pop uses rsp
         # memory access uses rbp
@@ -418,7 +417,9 @@ def translate(desc, flow, stack=None, this=None):
                 @this.append
                 def _(bs, this):
                     bs.code += isa.mov(registers.rax, util.print_nl_addr)
+                    bs.code += isa.mov(registers.r12, registers.rsp)
                     bs.code += isa.call(registers.rax)
+                    bs.code += isa.mov(registers.rsp, registers.r12)
         elif isinstance(t, ast.UnaryOp):
             this.append(t.operand)
             @this.append
@@ -529,10 +530,12 @@ def translate(desc, flow, stack=None, this=None):
                 this.append(t.value)
             @this.append
             def _(bs, this):
-                bs.code += isa.pop(registers.r12)
-                rax_type = bs.flow.stack.pop()
+                type = bs.flow.stack.pop()
+                assert type.size in [0, 1]
+                for i in xrange(type.size):
+                    bs.code += isa.pop(registers.r12)
                 
-                bs.code += isa.mov(registers.r13, rax_type.id)
+                bs.code += isa.mov(registers.r13, type.id)
                 
                 # leave
                 bs.code += isa.mov(registers.rsp, registers.rbp)
