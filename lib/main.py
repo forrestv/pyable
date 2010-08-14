@@ -1,3 +1,4 @@
+
 import ctypes
 import ctypes.util
 
@@ -191,7 +192,7 @@ class module(object):
     pass
 
 def __import__(name):
-    pass
+    aa
 
 if __name__ == "__main__":
     import random
