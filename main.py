@@ -21,7 +21,7 @@ if sys.argv[1] == "--debug":
     sys.argv[1:] = sys.argv[2:]
 
 filename = os.path.join(os.path.dirname(__file__), "lib", "main.py")
-filename = sys.argv[1]
+#filename = sys.argv[1]
 tree = ast.parse(open(filename).read(), filename)
 
 if util.DEBUG:
