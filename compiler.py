@@ -53,6 +53,7 @@ class Function(Executable):
         Executable.__init__(self)
         assert isinstance(t, ast.FunctionDef)
         self.t = t
+        self.is_generator = is_generator(self.t)
     @property
     def name(self):
         return self.t.name
@@ -180,6 +181,22 @@ class BlockStatus(object):
 
 blocks = []
 
+def _is_generator(x):
+    if isinstance(x, ast.Yield):
+        return True
+    elif isinstance(x, list):
+        return any(_is_generator(y) for y in x)
+    elif isinstance(x, ast.FunctionDef):
+        return False
+    elif isinstance(x, ast.AST):
+        return any(_is_generator(v) for k, v in ast.iter_fields(x))
+    else:
+        return False
+
+def is_generator(x):
+    assert isinstance(x, ast.FunctionDef)
+    return _is_generator(x.body)
+
 def translate(desc, flow, stack=None, this=None):
     bs = BlockStatus(flow.clone())    
     
@@ -249,8 +266,9 @@ def translate(desc, flow, stack=None, this=None):
             this.append(t.value)
             @this.append
             def _(bs, this, t=t):
-                bs.code += isa.pop(registers.rax)
-                rax_type = bs.flow.stack.pop()
+                type = bs.flow.stack.pop()
+                for i in xrange(type.size):
+                    bs.code += isa.pop(registers.rax)
         elif isinstance(t, ast.Num):
             if isinstance(t.n, float):
                 o = type_impl.Float
@@ -259,10 +277,6 @@ def translate(desc, flow, stack=None, this=None):
             else:
                 assert False, t.n
             this.append(o.load_constant(t.n))
-            @this.append
-            def _(bs, this, o=o):
-                bs.code += isa.push(registers.rax)
-                bs.flow.stack.append(o)
         elif isinstance(t, ast.Name):
             if isinstance(t.ctx, ast.Load):
                 if t.id == 'None':

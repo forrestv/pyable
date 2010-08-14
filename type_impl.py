@@ -77,6 +77,8 @@ class _Int(_Type):
         value = int(value)
         def _(bs, this):
             bs.code += isa.mov(registers.rax, value)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(self)
         return _
     def __neg__(self):
         def _(bs, this):
@@ -179,6 +181,8 @@ class _Float(_Type):
         value = float(value)
         def _(bs, this):
             bs.code += isa.mov(registers.rax, struct.unpack("l", struct.pack("d", value))[0])
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(self)
         return _
     def __neg__(self):
         def _(bs, this):
