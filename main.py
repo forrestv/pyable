@@ -5,6 +5,7 @@ import sys
 import struct
 import random
 import time
+import os
 
 import corepy.arch.x86_64.isa as isa
 import corepy.arch.x86_64.types.registers as registers
@@ -19,10 +20,24 @@ if sys.argv[1] == "--debug":
     util.DEBUG = 1
     sys.argv[1:] = sys.argv[2:]
 
-tree = ast.parse(open(sys.argv[1]).read())
+filename = os.path.join(os.path.dirname(__file__), "lib", "main.py")
+filename = sys.argv[1]
+tree = ast.parse(open(filename).read(), filename)
 
 if util.DEBUG:
     print util.dump(tree)
+
+main_module = compiler.Function(ast.FunctionDef(
+    name="__main__",
+    args=ast.arguments(
+        args=[],
+        vararg=None,
+        kwarg=None,
+        defaults=[],
+    ),
+    body=tree.body,
+    decorator_list=[],
+))
 
 def make_root():
     return compiler.translate("make_root", compiler.Flow(None), this=[
@@ -30,8 +45,6 @@ def make_root():
         lambda bs, this: bs.code.add(isa.ret()),
         None,
     ])
-
-main_module = compiler.Module(tree, "__main__")
 
 def caller():
     p = util.Program()
@@ -45,10 +58,9 @@ caller = caller()
 
 processor = platform.Processor()
 if util.DEBUG:
-    import time
-    print "STARTING"
+    print "START"
     start = time.time()
-ret = processor.execute(caller, mode='int')
+processor.execute(caller)
 if util.DEBUG:
     end = time.time()
-    print "END", ret, end-start
+    print "END", end - start

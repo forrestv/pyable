@@ -1,8 +1,9 @@
 
 import ctypes
-import ctypes.util
+#import ctypes.util
 
-libc = ctypes.CDLL(ctypes.util.find_library("c"))
+#libc = ctypes.CDLL(ctypes.util.find_library("c"))
+libc = ctypes.CDLL("libc.so.6")
 
 def abs(x):
     return x.__abs__()
@@ -53,7 +54,7 @@ def delattr(object, name):
 class dict(object):
     pass
 
-_no_arg = object()
+#_no_arg = object()
 def dir(object=_no_arg):
     if object is _no_arg:
         pass
@@ -73,7 +74,7 @@ def enumerate(sequence, start=0):
         yield start, item
         start += 1
 
-def eval(expression, , globals=None, locals=None):
+def eval(expression, globals=None, locals=None):
     pass
 
 def execfile(filename, globals=None, locals=None):
@@ -194,7 +195,7 @@ class module(object):
 def __import__(name):
     aa
 
-if __name__ == "__main__":
+if 0:
     import random
     
     # range

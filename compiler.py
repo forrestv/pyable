@@ -31,23 +31,6 @@ class Executable(object):
             ],
         )
 
-
-class Module(Executable):
-    def __init__(self, t, name):
-        Executable.__init__(self)
-        assert isinstance(t, ast.Module)
-        self.t = t
-        self.name = name
-    def pre(self, arg_types):
-        assert not arg_types
-        this = []
-        @this.append
-        def _(bs, this):
-            bs.code += isa.push(registers.rbp)
-            bs.code += isa.mov(registers.rbp, registers.rsp)
-            bs.code += isa.sub(registers.rsp, bs.flow.space * 8)
-        return this
-
 class Function(Executable):
     def __init__(self, t):
         Executable.__init__(self)
@@ -427,7 +410,10 @@ def translate(desc, flow, stack=None, this=None):
                         bs.code += isa.mov(registers.rax, util.print_string_addr)
                     else:
                         assert False, rdi_type
+                    bs.code += isa.mov(registers.r12, registers.rsp)
+                    bs.code += isa.and_(registers.rsp, -16)
                     bs.code += isa.call(registers.rax)
+                    bs.code += isa.mov(registers.rsp, registers.r12)
             if t.nl:
                 @this.append
                 def _(bs, this):
@@ -598,8 +584,16 @@ def translate(desc, flow, stack=None, this=None):
                 if name.name == "ctypes":
                     def _(bs, this):
                         import myctypes
-                        bs.code += isa.push(0)
                         bs.flow.stack.append(myctypes.CtypesModule)
+                    this.append(ast.Assign(
+                        targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
+                        value=_
+                    ))
+                    continue
+                if name.name == "_pyable":
+                    def _(bs, this):
+                        import my_pyable
+                        bs.flow.stack.append(my_pyable.PyableModule)
                     this.append(ast.Assign(
                         targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
                         value=_
@@ -619,6 +613,8 @@ def translate(desc, flow, stack=None, this=None):
                 assert False
             else:
                 assert False
+        elif isinstance(t, ast.ClassDef):
+            pass
         else:
             assert False, t
         bs.call_stack.extend(reversed(this))
