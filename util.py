@@ -207,11 +207,16 @@ patch_len = len(get_jmp(0))
 
 callback_type = ctypes.CFUNCTYPE(None, ctypes.c_int64)
 
-def get_asm_glue(dest_addr):
+def get_asm_glue_old(dest_addr):
     program = BareProgram()
     code = program.get_stream()
     code += isa.mov(registers.rax, fake_int(dest_addr))
+    code += isa.push(registers.r12)
+    code += isa.mov(registers.r12, registers.rsp)
+    code += isa.and_(registers.rsp, -16)
     code += isa.call(registers.rax)
+    code += isa.mov(registers.rsp, registers.r12)
+    code += isa.pop(registers.r12)
     code += isa.pop(registers.rax)
     code += isa.sub(registers.rax, patch_len)
     code += isa.jmp(registers.rax)
@@ -222,7 +227,7 @@ def get_asm_glue(dest_addr):
 def get_asm_glue(dest):
     l = [72, 184]
     l.extend(struct.unpack("8B", struct.pack("l", ctypes.cast(dest, ctypes.c_void_p).value)))
-    l.extend([72, 255, 208, 72, 88, 72, 131, 232, 13, 72, 255, 224])
+    l.extend([73, 84, 73, 137, 228, 72, 131, 228, 240, 72, 255, 208, 76, 137, 228, 73, 92, 72, 88, 72, 131, 232, 13, 72, 255, 224])
     l = extarray('B', l)
     make_executable(*l.buffer_info())
     l.references.append(dest)
@@ -350,9 +355,9 @@ if __name__ == "__main__":
     print repr(get_jmp(0))
     print repr(get_call(0))
     print repr(get_mov_rax(0))
-    #print repr(get_asm_glue(0))
+    print repr(get_asm_glue_old(0))
     blocks = []
-    count = 1000
+    count = 10000
     def go(i=0):
         program = BareProgram()
         code = program.get_stream()
