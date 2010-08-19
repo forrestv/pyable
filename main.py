@@ -21,7 +21,7 @@ if sys.argv[1] == "--debug":
     sys.argv[1:] = sys.argv[2:]
 
 filename = os.path.join(os.path.dirname(__file__), "lib", "main.py")
-#filename = sys.argv[1]
+filename = sys.argv[1]
 tree = ast.parse(open(filename).read(), filename)
 
 if util.DEBUG:
@@ -42,14 +42,14 @@ main_module = compiler.Function(ast.FunctionDef(
 def make_root():
     return compiler.translate("make_root", compiler.Flow(None), this=[
         main_module(),
-        lambda bs, this: bs.code.add(isa.ret()),
+        lambda bs: bs.code.add(isa.ret()),
         None,
     ])
 
 def caller():
     p = util.Program()
     code = p.get_stream()
-    util.Redirection(code, lambda caller: caller.replace(util.get_call(make_root())))
+    util.add_redirection(code, lambda rdi: util.get_call(make_root()))
     p.add(code)
     p.cache_code()
     util.debug(p, "caller")

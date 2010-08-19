@@ -1,0 +1,23 @@
+Generator.call
+    x = malloc(1000000)
+    x[0] = 
+    return <generator object>
+
+<generator object>
+    stack pointer
+    stack
+
+<generator object>.next
+    call skip
+skip:
+    pop rax
+    jmp rax
+
+generator frame
+    <return address>
+
+return:
+    call
+    push rip
+
+isa.xchg(registers.rsp, MemRef(registers.rbp))

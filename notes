@@ -1,7 +1,7 @@
 each code fragment KNOWS the variables it uses' types
 operations that return variable types ... eg 
 
-handling integers
+handling longs
 we have int0, int1, int2, int3, int4, int5, int6, int7, ...
 each operation _must_ return the smallest one to fit it ... hmmm maybe cap lower at 8 and multiples of 8
 
@@ -14,4 +14,25 @@ have each function have multiple return points depending on the type
 
 use negative index locals
 
-and adjust stack when calling :D
+and adjust stack when calling
+
+---
+
+IDEAS
+
+inlining
+    we need a way to do this with functions
+    we could inline constants, though we'd need some way to determine which to do this for
+        class attributes (we already do this by only allowing functions)
+        globals
+        in case they change anyway
+            we'd need to alter the generated code to account for this
+                for integers
+                    as simple as storing a list of the positions of the value and replacing all
+                if type changes
+                    much more complex
+the current object data table generates a lot of redundant unlifts for the slots changing
+    instead, some way to signal that an attribute is in the same place and type is needed
+    perhaps separate to separate schema and type?
+        this would only benefit if the type changed a lot while the schema did not, or vice versa
+

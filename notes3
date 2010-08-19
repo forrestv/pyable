@@ -1,0 +1,88 @@
+the age-old question:
+
+how do you store an object (that could be of any type) in a binary container? (in a sane, small, fast way :)
+
+right now we're going with 'the compiler knows the type at compile-time'
+
+oh right the invalidation
+
+----
+
+object typing
+
+store type somehow in object, uplift whenever it could have changed
+
+---
+
+tuple
+
+pointer to:
+    type number
+    object data
+
+maybe optimize one/zero-tuple (or longer?)
+
+object
+
+pointer to:
+    object class <shouldn't this be moved to compiler ... yeah!>
+    attribute type
+    pointer to:
+        attributes
+
+maybe optimize empty object?
+
+--
+
+variable or fixed object size?
+
+variable pros
+- saves space
+- saves time
+
+fixed pros
+- simpler
+- makes O(1) indexing possible and you can store more complex object type inline
+
+--
+
+we need an actual unlift operator .. would be nice at least :p
+
+---
+
+tuple/list needs to be an abstract container with the type ids ... this is not going to be very optimal otherwise
+
+tuple
+
+pointer to:
+    length
+    length * pointer to:
+        type.id
+        type data
+
+-> massive! D:
+
+issues
+we need O(1) indexing
+the tuple should contain the type data since we'd have to unlift anyway for non-constant getitem
+
+pointer to:
+    length:
+    length * this record:
+        type.id
+        type.data (padded to 16 bytes)
+
+OR
+
+pointer to:
+    length:
+    length * offset (in smallest possible type)
+
+---
+
+tuple2
+
+pointer to:
+    length
+    length * offset
+    stack data

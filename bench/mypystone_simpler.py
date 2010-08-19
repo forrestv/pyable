@@ -1,19 +1,18 @@
-def xrange(start, end=None, step=1):
-    assert step
-    if end is None:
-        end = start
-        start = 0
-    i = start
-    while (i < end and step > 0) or (i > end and step < 0):
-        yield i
-        i += step
-range = xrange
+class list(object):
+    def __init__(self, iterable=None):
+        if iterable is not None:
+            for item in iterable:
+                self.append(item)
+    def __len__(self):
+        return self._store[0]
+    def append(self, item):
+        self._store
 
 LOOPS = 1000000
 
 __version__ = "1.1"
 
-[Ident1, Ident2, Ident3, Ident4, Ident5] = range(1, 6)
+Ident1, Ident2, Ident3, Ident4, Ident5 = 1, 2, 3, 4, 5
 
 class Record:
 
@@ -61,7 +60,8 @@ def Proc0(loops):
     String1Loc = "DHRYSTONE PROGRAM, 1'ST STRING"
     Array2Glob[8][7] = 10
 
-    for i in range(loops):
+    i = 0
+    while i < loops:
         Proc5()
         Proc4()
         IntLoc1 = 2
@@ -84,6 +84,7 @@ def Proc0(loops):
         IntLoc2 = IntLoc3 / IntLoc1
         IntLoc2 = 7 * (IntLoc3 - IntLoc2) - IntLoc1
         IntLoc1 = Proc2(IntLoc1)
+        i += 1
 
 def Proc1(PtrParIn):
     PtrParIn.PtrComp = NextRecord = PtrGlb.copy()
@@ -167,8 +168,10 @@ def Proc8(Array1Par, Array2Par, IntParI1, IntParI2):
     Array1Par[IntLoc] = IntParI2
     Array1Par[IntLoc+1] = Array1Par[IntLoc]
     Array1Par[IntLoc+30] = IntLoc
-    for IntIndex in range(IntLoc, IntLoc+2):
+    IntIndex = IntLoc
+    while IntIndex < IntLoc+2:
         Array2Par[IntLoc][IntIndex] = IntLoc
+        IntIndex += 1
     Array2Par[IntLoc][IntLoc-1] = Array2Par[IntLoc][IntLoc-1] + 1
     Array2Par[IntLoc+20][IntLoc] = Array1Par[IntLoc]
     IntGlob = 5

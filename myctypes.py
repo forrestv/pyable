@@ -1,3 +1,5 @@
+from __future__ import division
+
 import ctypes
 import random
 import ast
@@ -17,7 +19,7 @@ def wrap_func(func_):
         size = 0
         func = func_
         def __call__(self, arg_types):
-            def _(bs, this):
+            def _(bs):
                 ints = len([x for x in arg_types if x is type_impl.Int])
                 floats = len([x for x in arg_types if x is type_impl.Float])
                 for arg_type in arg_types:
@@ -47,7 +49,7 @@ def load_cdll(name):
         size = 0
         cdll = ctypes.CDLL(name)
         def getattr_const_string(self, s):
-            def _(bs, this):
+            def _(bs):
                 assert bs.flow.stack.pop() is self
                 bs.flow.stack.append(wrap_func(self.cdll[s]))
             return _
@@ -57,7 +59,7 @@ class _CDLL(type_impl._Type):
     size = 0
     def call_const(self, a):
         assert isinstance(a, ast.Str)
-        def _(bs, this):
+        def _(bs):
             assert bs.flow.stack.pop() is self
             bs.flow.stack.append(load_cdll(a.s))
         return _
@@ -68,7 +70,7 @@ class _CtypesModule(type_impl._Type):
     size = 0
     def getattr_const_string(self, s):
         if s == "CDLL":
-            def _(bs, this):
+            def _(bs):
                 assert bs.flow.stack.pop() is self
                 bs.flow.stack.append(CDLL)
             return _

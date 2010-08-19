@@ -1,19 +1,72 @@
-def xrange(start, end=None, step=1):
-    assert step
-    if end is None:
-        end = start
-        start = 0
-    i = start
-    while (i < end and step > 0) or (i > end and step < 0):
-        yield i
-        i += step
-range = xrange
+import _pyable
+
+list = _pyable.type("list", None, None)
+
+def list___init__(self, iterable=None):
+    self._used = 0
+    self._allocated = 0
+    if iterable is not None:
+        for item in iterable:
+            self.append(item)
+list.__init__ = list___init__
+
+def list___len__(self):
+    return self._used
+list.__len__ = list___len__
+
+def list__grow(self):
+    new_allocated = self._allocated * 2 + 1
+    import _pyable
+    new_store = _pyable.raw(4 * new_allocated)
+    if self._used:
+        new_store.copy_from(self._store, 4 * self._used)
+    self._allocated = new_allocated
+    self._store = new_store
+list._grow = list__grow
+
+def list_append(self, item):
+    if self._used + 1 > self._allocated:
+         self._grow()
+    self._store.store_object(4 * self._used, item)
+    self._used += 1
+    return self
+list.append = list_append
+
+def list___getitem__(self, index):
+    if index < 0:
+        index += self._used
+    if index >= self._used:
+        return None
+    return self._store.load_object(4 * index)
+list.__getitem__ = list___getitem__
+
+def list_pop(self, index=-1):
+    if index < 0:
+        index += self._used
+    if index < 0 or index >= self._used:
+        return None
+    res = self._store.load_object(4 * index)
+    i = 4 * index
+    while i + 4 < 4 * self._used:
+        self._store[i] = self._store[i + 4]
+        t += 1
+    self._used -= 1
+    return res
+list.pop = list_pop
+
+def len(o):
+    return o.__len__()
+
+_pyable.set_list_impl(list)
+
+
+
 
 LOOPS = 1000000
 
 __version__ = "1.1"
 
-[Ident1, Ident2, Ident3, Ident4, Ident5] = range(1, 6)
+Ident1, Ident2, Ident3, Ident4, Ident5 = 1, 2, 3, 4, 5
 
 class Record:
 
@@ -61,7 +114,8 @@ def Proc0(loops):
     String1Loc = "DHRYSTONE PROGRAM, 1'ST STRING"
     Array2Glob[8][7] = 10
 
-    for i in range(loops):
+    i = 0
+    while i < loops:
         Proc5()
         Proc4()
         IntLoc1 = 2
@@ -84,6 +138,7 @@ def Proc0(loops):
         IntLoc2 = IntLoc3 / IntLoc1
         IntLoc2 = 7 * (IntLoc3 - IntLoc2) - IntLoc1
         IntLoc1 = Proc2(IntLoc1)
+        i += 1
 
 def Proc1(PtrParIn):
     PtrParIn.PtrComp = NextRecord = PtrGlb.copy()
@@ -167,8 +222,10 @@ def Proc8(Array1Par, Array2Par, IntParI1, IntParI2):
     Array1Par[IntLoc] = IntParI2
     Array1Par[IntLoc+1] = Array1Par[IntLoc]
     Array1Par[IntLoc+30] = IntLoc
-    for IntIndex in range(IntLoc, IntLoc+2):
+    IntIndex = IntLoc
+    while IntIndex < IntLoc+2:
         Array2Par[IntLoc][IntIndex] = IntLoc
+        IntIndex += 1
     Array2Par[IntLoc][IntLoc-1] = Array2Par[IntLoc][IntLoc-1] + 1
     Array2Par[IntLoc+20][IntLoc] = Array1Par[IntLoc]
     IntGlob = 5

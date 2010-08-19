@@ -1,7 +1,7 @@
-x = 1010460
+x = 996570036
 
 i = 2
-while i < 100000000:
+while i*i < x:
     while x % i == 0:
         print i
         x //= i
