@@ -491,28 +491,28 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.Print):
             assert t.dest is None
             for value in t.values:
-                bs.this.append(value)
+                bs.this.append(
+                    ast.Call(
+                        func=ast.Attribute(
+                            value=value,
+                            attr='__str__',
+                            ctx=ast.Load(),
+                            ),
+                        args=[],
+                        keywords=[],
+                        starargs=None,
+                        kwargs=None,
+                        ),
+                    )
                 @bs.this.append
                 def _(bs, value=value):
                     type = bs.flow.stack.pop()
                     
-                    if type is type_impl.Int:
-                        bs.code += isa.pop(registers.rdi)
-                        bs.code += isa.mov(registers.rax, util.print_int64_addr)
-                    elif type is type_impl.Float:
-                        bs.code += isa.pop(registers.rdi)
-                        bs.code += isa.mov(registers.rax, util.print_double_addr)
-                    elif type is type_impl.Str:
-                        bs.code += isa.pop(registers.rdi)
-                        bs.code += isa.mov(registers.rax, util.print_string_addr)
-                    elif type is type_impl.NoneType:
-                        type_impl.Str.load_constant("None")(bs)
-                        assert bs.flow.stack.pop() is type_impl.Str
-                        bs.code += isa.pop(registers.rax)
-                        bs.code += isa.mov(registers.rdi, registers.rax)
-                        bs.code += isa.mov(registers.rax, util.print_string_addr)
-                    else:
-                        assert False, rdi_type
+                    assert type is type_impl.Str
+                    
+                    bs.code += isa.pop(registers.rdi)
+                    bs.code += isa.mov(registers.rax, util.print_string_addr)
+                    
                     bs.code += isa.mov(registers.r12, registers.rsp)
                     bs.code += isa.and_(registers.rsp, -16)
                     bs.code += isa.call(registers.rax)
@@ -726,6 +726,7 @@ def translate(desc, flow, stack=None, this=None):
             assert isinstance(t.ctx, ast.Load)
             import mypyable
             def _gettype(bs):
+                assert mypyable.list_impl is not None, "lists haven't been bootstrapped"
                 bs.flow.stack.append(mypyable.list_impl)
                 assert mypyable.list_impl.size == 0
             bs.this.append(

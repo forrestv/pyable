@@ -62,6 +62,78 @@ class _IntNonzeroMeth(_Type):
         return _
 IntNonzeroMeth = number(_IntNonzeroMeth())
 
+
+class _IntStrMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rax)
+            
+            bs.code += isa.push(registers.rbp)
+            bs.code += isa.mov(registers.rbp, registers.rsp)
+            
+            loop = bs.program.get_unique_label()
+            
+            bs.code += isa.mov(registers.r14, 0)
+            
+            bs.code += isa.cmp(registers.rax, 0)
+            bs.code += isa.jge(loop)
+            
+            bs.code += isa.mov(registers.r14, 1)
+            bs.code += isa.neg(registers.rax)
+            
+            bs.code += loop
+            
+            bs.code += isa.mov(registers.rdx, 0)
+            bs.code += isa.mov(registers.rbx, 10)
+            bs.code += isa.idiv(registers.rbx)
+            bs.code += isa.add(registers.rdx, ord('0'))
+            bs.code += isa.sub(registers.rsp, 1)
+            bs.code += isa.mov(MemRef(registers.rsp, data_size=8), registers.dl)
+            
+            bs.code += isa.cmp(registers.rax, 0)
+            bs.code += isa.jne(loop)
+            
+            skip = bs.program.get_unique_label()
+            
+            bs.code += isa.cmp(registers.r14, 0)
+            bs.code += isa.je(skip)
+            
+            bs.code += isa.sub(registers.rsp, 1)
+            bs.code += isa.mov(MemRef(registers.rsp, data_size=8), ord('-'))
+            
+            bs.code += skip
+            
+            bs.code += isa.mov(registers.r12, registers.rbp)
+            bs.code += isa.sub(registers.r12, registers.rsp)
+            bs.code += isa.push(registers.r12)
+            bs.code += isa.add(registers.r12, 8)
+            
+            bs.code += isa.mov(registers.r13, registers.rsp)
+            
+            bs.code += isa.and_(registers.rsp, -16)
+            
+            bs.code += isa.mov(registers.rdi, registers.r12)
+            bs.code += isa.mov(registers.rax, util.malloc_addr)
+            bs.code += isa.call(registers.rax)
+            
+            bs.code += isa.mov(registers.rdi, registers.rax)
+            bs.code += isa.mov(registers.rsi, registers.r13)
+            bs.code += isa.mov(registers.rdx, registers.r12)
+            bs.code += isa.mov(registers.rax, ctypes.cast(ctypes.memmove, ctypes.c_void_p).value)	
+            bs.code += isa.call(registers.rax)
+            
+            bs.code += isa.mov(registers.rsp, registers.rbp)
+            bs.code += isa.pop(registers.rbp)
+            
+            bs.code += isa.push(registers.rax)
+            
+            bs.flow.stack.append(Str)
+        return _
+IntStrMeth = number(_IntStrMeth())
+
 class _Int(_Type):
     size = 1
     def getattr_const_string(self, s):
@@ -86,6 +158,10 @@ class _Int(_Type):
                 assert bs.flow.stack.pop() is self
                 #bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(IntNonzeroMeth)
+            elif s == "__str__":
+                assert bs.flow.stack.pop() is self
+                #bs.code += isa.pop(registers.rax)
+                bs.flow.stack.append(IntStrMeth)
             else:
                 assert False, s
         return _
@@ -579,6 +655,16 @@ protoinstances = util.cdict(ProtoInstance)
 
 strings = util.cdict(lambda s: ctypes.create_string_buffer(struct.pack("L", len(s)) + s))
 
+class _StrStrMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.flow.stack.append(Str)
+        return _
+StrStrMeth = number(_StrStrMeth())
+
 class _Str(_Type):
     size = 1
     def load_constant(self, s):
@@ -592,6 +678,15 @@ class _Str(_Type):
         i, = struct.unpack("q", data)
         length, = struct.unpack("l", ctypes.string_at(i, 8))
         return ctypes.string_at(i+8, length)
+    def getattr_const_string(self, s):
+        def _(bs):
+            assert bs.flow.stack[-1] is self
+            if s == "__str__":
+                assert bs.flow.stack.pop() is self
+                bs.flow.stack.append(StrStrMeth)
+            else:
+                assert False, s
+        return _
 Str = number(_Str())
 
 functions = []
@@ -653,6 +748,16 @@ class _Method(_Type):
 
 methods = util.cdict(_Method)
 
+class _NoneStrMeth(_Type):
+    size = 0
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.this.append(Str.load_constant('None'))
+        return _
+NoneStrMeth = number(_NoneStrMeth())
+
 class _NoneType(_Type):
     size = 0
     def load(self):
@@ -661,54 +766,13 @@ class _NoneType(_Type):
         return _
     def to_python(self, data):
         assert not data
-NoneType = number(_NoneType())
-
-class _List(_Type):
-    def append(self):
-        # [self, element]
+    def getattr_const_string(self, s):
         def _(bs):
-            # r12 = element pointer
-            # r13 = list pointer
-            # r14 = new len
-            
-            bs.code += isa.pop(registers.r12)
-            r12_type = bs.flow.stack.pop()
-            bs.code += isa.pop(registers.r13)
-            r13_type = bs.flow.stack.pop()
-            
-            assert r13_type is List
-            
-            bs.code += isa.mov(registers.r14, MemRef(registers.r13))
-            bs.code += isa.add(registers.r14, 1)
-            
-            bs.code += isa.cmp(registers.r11, MemRef(registers.rax, 8))
-            skip_realloc = bs.program.get_unique_label()
-            bs.code += isa.jle(skip_realloc)
-            
-            # allocated = allocated * 2 + 1
-            bs.code += isa.mov(registers.rax, util.realloc_addr)
-            bs.code += isa.mov(registers.rdi, MemRef(registers.r13, 16))
-            bs.code += isa.mov(registers.rsi, MemRef(registers.r13, 8))
-            bs.code += isa.mul(registers.rsi, 2)
-            bs.code += isa.add(registers.rsi, 1)
-            bs.code += isa.mov(MemRef(registers.r13, 8), registers.rdi)
-            bs.code += isa.mul(registers.rsi, 16)
-            bs.code += isa.call(registers.rax)
-            bs.code += isa.mov(MemRef(registers.r13, 16), registers.rax)
-            
-            bs.code += skip_realloc
-            
-            #bs.code += isa.inc(MemRef(
-            
-    def load(self):
-        def _(bs):
-            bs.code += isa.mov(registers.rax, util.malloc_addr)
-            bs.code += isa.mov(registers.rdi, 24)
-            bs.code += isa.call(registers.rax)
-            bs.code += isa.mov(MemRef(registers.rax), 0) # length
-            bs.code += isa.mov(MemRef(registers.rax, 8), 0) # allocated length
-            bs.code += isa.mov(MemRef(registers.rax, 16), 0) # pointer
-            bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(List)
+            assert bs.flow.stack[-1] is self
+            if s == "__str__":
+                assert bs.flow.stack.pop() is self
+                bs.flow.stack.append(NoneStrMeth)
+            else:
+                assert False, s
         return _
-List = number(_List())
+NoneType = number(_NoneType())
