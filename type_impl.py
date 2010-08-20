@@ -62,7 +62,6 @@ class _IntNonzeroMeth(_Type):
         return _
 IntNonzeroMeth = number(_IntNonzeroMeth())
 
-
 class _IntStrMeth(_Type):
     size = 1
     def __call__(self, arg_types):
@@ -267,6 +266,73 @@ class _Int(_Type):
         return NotImplemented
 Int = number(_Int())
 
+class _FloatStrMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
+            bs.code += isa.pop(registers.rdi)
+            
+            bs.code += isa.push(registers.rbp)
+            bs.code += isa.mov(registers.rbp, registers.rsp)
+            
+            bs.code += isa.and_(registers.rsp, -16)
+            bs.code += isa.sub(registers.rsp, 64)
+            
+            bs.code += isa.lea(registers.rdi, MemRef(registers.rbp, -32, data_size=None))
+            bs.code += isa.mov(registers.rsi, ctypes.cast(raw_strings["%.12g\0"], ctypes.c_void_p).value)
+            bs.code += isa.mov(registers.al, 1)
+            bs.code += isa.mov(registers.r15, util.sprintf_addr)
+            bs.code += isa.call(registers.r15)
+            bs.code += isa.mov(registers.r12, registers.rax)
+            
+            loop = bs.program.get_unique_label()
+            skip = bs.program.get_unique_label()
+            add = bs.program.get_unique_label()
+            
+            bs.code += isa.lea(registers.rax, MemRef(registers.rbp, -32, data_size=None))
+            
+            bs.code += loop
+            
+            bs.code += isa.cmp(MemRef(registers.rax, data_size=8), 0)
+            bs.code += isa.je(add)
+            bs.code += isa.cmp(MemRef(registers.rax, data_size=8), ord('.'))
+            bs.code += isa.je(skip)
+            bs.code += isa.inc(registers.rax)
+            bs.code += isa.jmp(loop)
+            
+            bs.code += add
+            
+            bs.code += isa.mov(MemRef(registers.rax, 0, data_size=8), ord('.'))
+            bs.code += isa.mov(MemRef(registers.rax, 1, data_size=8), ord('0'))
+            bs.code += isa.add(registers.r12, 2)
+            
+            bs.code += skip
+            
+            bs.code += isa.mov(MemRef(registers.rbp, -32 - 8), registers.r12)
+            bs.code += isa.add(registers.r12, 8)
+            
+            bs.code += isa.mov(registers.rdi, registers.r12)
+            bs.code += isa.mov(registers.rax, util.malloc_addr)
+            bs.code += isa.call(registers.rax)
+            
+            bs.code += isa.mov(registers.rdi, registers.rax)
+            bs.code += isa.lea(registers.rsi, MemRef(registers.rbp, -32 - 8, data_size=None))
+            bs.code += isa.mov(registers.rdx, registers.r12)
+            bs.code += isa.mov(registers.rax, ctypes.cast(ctypes.memmove, ctypes.c_void_p).value)	
+            bs.code += isa.call(registers.rax)
+            
+            bs.code += isa.mov(registers.rsp, registers.rbp)
+            bs.code += isa.pop(registers.rbp)
+            
+            bs.code += isa.push(registers.rax)
+            
+            bs.flow.stack.append(Str)
+        return _
+FloatStrMeth = number(_FloatStrMeth())
+
 class _Float(_Type):
     size = 1
     def load_constant(self, value):
@@ -276,6 +342,15 @@ class _Float(_Type):
             bs.code += isa.mov(registers.rax, struct.unpack("l", struct.pack("d", value))[0])
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
+        return _
+    def getattr_const_string(self, s):
+        def _(bs):
+            assert bs.flow.stack[-1] is self
+            if s == "__str__":
+                assert bs.flow.stack.pop() is self
+                bs.flow.stack.append(FloatStrMeth)
+            else:
+                assert False, s
         return _
     def __neg__(self):
         def _(bs):
@@ -653,6 +728,7 @@ class ProtoInstance(_Type):
 
 protoinstances = util.cdict(ProtoInstance)
 
+raw_strings = util.cdict(lambda s: ctypes.create_string_buffer(s))
 strings = util.cdict(lambda s: ctypes.create_string_buffer(struct.pack("L", len(s)) + s))
 
 class _StrStrMeth(_Type):

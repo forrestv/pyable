@@ -282,6 +282,7 @@ print_nl_addr = ctypes.cast(print_nl_cfunc, ctypes.c_void_p).value
 malloc_addr = ctypes.cast(ctypes.CDLL("libc.so.6").malloc, ctypes.c_void_p).value
 free_addr = ctypes.cast(ctypes.CDLL("libc.so.6").free, ctypes.c_void_p).value
 realloc_addr = ctypes.cast(ctypes.CDLL("libc.so.6").realloc, ctypes.c_void_p).value
+sprintf_addr = ctypes.cast(ctypes.CDLL("libc.so.6").sprintf, ctypes.c_void_p).value
 
 def dump(node, annotate_fields=True, include_attributes=False):
     """
