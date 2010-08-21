@@ -352,6 +352,29 @@ def hash_dict(d):
 
 import compiler
 
+def pop(bs, regs):
+    res = []
+    type = bs.flow.stack.pop()
+    for i in xrange(type.size):
+        reg = regs.pop()
+        bs.code += isa.pop(reg)
+        res.append(reg)
+    return type, res
+def push(bs, (type, regs)):
+    assert type.size == len(regs)
+    for reg in reversed(regs):
+        bs.code += isa.push(reg)
+    bs.flow.stack.append(type)
+
+good_regs = [registers.rbx, registers.rcx, registers.rdx, registers.rdi, registers.rsi, registers.r9]
+
+def swap(bs):
+    regs = list(good_regs)
+    a = pop(bs, regs)
+    b = pop(bs, regs)
+    push(bs, a)
+    push(bs, b)
+
 if __name__ == "__main__":
     print repr(get_jmp(0))
     print repr(get_call(0))

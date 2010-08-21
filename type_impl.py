@@ -62,6 +62,42 @@ class _IntNonzeroMeth(_Type):
         return _
 IntNonzeroMeth = number(_IntNonzeroMeth())
 
+class _IntBoolMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.flow.stack.append(Bool)
+        return _
+IntBoolMeth = number(_IntBoolMeth())
+
+class _IntNegMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.neg(registers.rax)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Int)
+        return _
+IntNegMeth = number(_IntNegMeth())
+
+class _IntInvertMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.not_(registers.rax)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Int)
+        return _
+IntInvertMeth = number(_IntInvertMeth())
+
 class _IntStrMeth(_Type):
     size = 1
     def __call__(self, arg_types):
@@ -133,36 +169,155 @@ class _IntStrMeth(_Type):
         return _
 IntStrMeth = number(_IntStrMeth())
 
+class _IntAddMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 1
+        def _(bs):
+            other_type = bs.flow.stack.pop()
+            if other_type is not Int and other_type is not Bool:
+                for i in xrange(other_type.size):
+                    bs.code += isa.pop(registers.rax)
+                bs.flow.stack.append(NotImplementedType)
+                return
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rbx)
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.add(registers.rax, registers.rbx)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Int)
+        return _
+IntAddMeth = number(_IntAddMeth())
+
+class _IntSubMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 1
+        def _(bs):
+            other_type = bs.flow.stack.pop()
+            if other_type is not Int and other_type is not Bool:
+                for i in xrange(other_type.size):
+                    bs.code += isa.pop(registers.rax)
+                bs.flow.stack.append(NotImplementedType)
+                return
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rbx)
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.sub(registers.rax, registers.rbx)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Int)
+        return _
+IntSubMeth = number(_IntSubMeth())
+
+class _IntMulMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 1
+        def _(bs):
+            other_type = bs.flow.stack.pop()
+            if other_type is not Int and other_type is not Bool:
+                for i in xrange(other_type.size):
+                    bs.code += isa.pop(registers.rax)
+                bs.flow.stack.append(NotImplementedType)
+                return
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rbx)
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.imul(registers.rax, registers.rbx)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Int)
+        return _
+IntMulMeth = number(_IntMulMeth())
+
+class _IntModMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 1
+        def _(bs):
+            other_type = bs.flow.stack.pop()
+            if other_type is not Int and other_type is not Bool:
+                for i in xrange(other_type.size):
+                    bs.code += isa.pop(registers.rax)
+                bs.flow.stack.append(NotImplementedType)
+                return
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rbx)
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.mov(registers.rdx, 0)
+            bs.code += isa.mov(registers.rax, registers.rax)
+            bs.code += isa.idiv(registers.rbx)
+            bs.code += isa.push(registers.rdx)
+            bs.flow.stack.append(Int)
+        return _
+IntModMeth = number(_IntModMeth())
+
+class _IntFloorDivMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 1
+        def _(bs):
+            other_type = bs.flow.stack.pop()
+            if other_type is not Int and other_type is not Bool:
+                for i in xrange(other_type.size):
+                    bs.code += isa.pop(registers.rax)
+                bs.flow.stack.append(NotImplementedType)
+                return
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rbx)
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.mov(registers.rdx, 0)
+            bs.code += isa.mov(registers.rax, registers.rax)
+            bs.code += isa.idiv(registers.rbx)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Int)
+        return _
+IntFloorDivMeth = number(_IntFloorDivMeth())
+
 class _Int(_Type):
     size = 1
+    def getattr_numerator(self, bs):
+        bs.flow.stack.append(Int)
+    def getattr_denominator(self, bs):
+        bs.code += isa.pop(registers.rax)
+        bs.code += isa.push(1)
+        bs.flow.stack.append(Int)
+    def getattr_real(self, bs):
+        bs.flow.stack.append(Int)
+    def getattr_imag(self, bs):
+        bs.code += isa.pop(registers.rax)
+        bs.code += isa.push(0)
+        bs.flow.stack.append(Int)
+    def getattr___abs__(self, bs):
+        bs.flow.stack.append(IntAbsMeth)
+    def getattr___nonzero__(self, bs):
+        bs.flow.stack.append(IntNonzeroMeth)
+    def getattr___str__(self, bs):
+        bs.flow.stack.append(IntStrMeth)
+    def getattr___neg__(self, bs):
+        bs.flow.stack.append(IntNegMeth)
+    def getattr___pos__(self, bs):
+        bs.flow.stack.append(IntNonzeroMeth)
+    def getattr___invert__(self, bs):
+        bs.flow.stack.append(IntInvertMeth)
+    def getattr___bool__(self, bs):
+        bs.flow.stack.append(IntBoolMeth)
+    def getattr___add__(self, bs):
+        bs.flow.stack.append(IntAddMeth)
+    def getattr___sub__(self, bs):
+        bs.flow.stack.append(IntSubMeth)
+    def getattr___mul__(self, bs):
+        bs.flow.stack.append(IntMulMeth)
+    def getattr___div__(self, bs):
+        bs.flow.stack.append(IntDivMeth)
+    def getattr___floordiv__(self, bs):
+        bs.flow.stack.append(IntFloorDivMeth)
+    def getattr___mod__(self, bs):
+        bs.flow.stack.append(IntModMeth)
     def getattr_const_string(self, s):
+        f = getattr(self, "getattr_" + s)
         def _(bs):
-            assert bs.flow.stack[-1] is self
-            if s == "numerator":
-                pass
-            elif s == "denominator":
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.push(1)
-            elif s == "real":
-                pass
-            elif s == "imag":
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.push(0)
-            elif s == "__abs__":
-                assert bs.flow.stack.pop() is self
-                #bs.code += isa.pop(registers.rax)
-                bs.flow.stack.append(IntAbsMeth)
-                # method needs to contain this and the pointer
-            elif s == "__nonzero__":
-                assert bs.flow.stack.pop() is self
-                #bs.code += isa.pop(registers.rax)
-                bs.flow.stack.append(IntNonzeroMeth)
-            elif s == "__str__":
-                assert bs.flow.stack.pop() is self
-                #bs.code += isa.pop(registers.rax)
-                bs.flow.stack.append(IntStrMeth)
-            else:
-                assert False, s
+            assert bs.flow.stack.pop() is self
+            f(bs)
         return _
     def load_constant(self, value):
         assert isinstance(value, int)
@@ -265,6 +420,48 @@ class _Int(_Type):
             return _
         return NotImplemented
 Int = number(_Int())
+
+class _BoolStrMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            false = bs.program.get_unique_label()
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.cmp(registers.rax, 0)
+            bs.code += isa.mov(registers.rax, ctypes.cast(strings['False'], ctypes.c_void_p).value)
+            bs.code += isa.je(false)
+            bs.code += isa.mov(registers.rax, ctypes.cast(strings['True'], ctypes.c_void_p).value)
+            bs.code += false
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Str)
+        return _
+BoolStrMeth = number(_BoolStrMeth())
+
+class _Bool(_Int):
+    load = None
+    load_constant = None
+    def load_false(self):
+        def _(bs):
+            bs.code += isa.mov(registers.rax, 0)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(self)
+        return _
+    def load_false(self):
+        def _(bs):
+            bs.code += isa.mov(registers.rax, 1)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(self)
+        return _
+    def getattr_const_string(self, s):
+        if s == "__str__":
+            def _(bs):
+                assert bs.flow.stack.pop() is self
+                bs.flow.stack.append(BoolStrMeth)
+            return _
+        return _Int.getattr_const_string(self, s)
+Bool = number(_Bool())
 
 class _FloatStrMeth(_Type):
     size = 1
@@ -688,35 +885,13 @@ class ProtoInstance(_Type):
             # call
             #   result
             
-            def swap(bs):
-                regs = [registers.rbx, registers.rcx, registers.rdx, registers.rdi, registers.rsi, registers.r9]
-                
-                def pop():
-                    res = []
-                    type = bs.flow.stack.pop()
-                    for i in xrange(type.size):
-                        reg = regs.pop()
-                        bs.code += isa.pop(reg)
-                        res.append(reg)
-                    return type, res
-                def push((type, regs)):
-                    assert type.size == len(regs)
-                    for reg in reversed(regs):
-                        bs.code += isa.push(reg)
-                    bs.flow.stack.append(type)
-                
-                a = pop()
-                b = pop()
-                push(a)
-                push(b)
-            
-            bs.this.append(swap)
+            bs.this.append(util.swap)
             
             def _(bs):
                 assert bs.flow.stack[-1] is self
             bs.this.append(ast.Attribute(value=_, attr='__getitem__', ctx=ast.Load()))
             
-            bs.this.append(swap)
+            bs.this.append(util.swap)
             
             def _(bs):
                 pass

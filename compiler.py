@@ -526,36 +526,105 @@ def translate(desc, flow, stack=None, this=None):
                     bs.code += isa.call(registers.rax)
                     bs.code += isa.mov(registers.rsp, registers.r12)
         elif isinstance(t, ast.UnaryOp):
-            bs.this.append(t.operand)
-            @bs.this.append
-            def _(bs, t=t):
-                type = bs.flow.stack.pop()
-                if isinstance(t.op, ast.USub): r = -type
-                else: assert False, t.op
-                bs.this.append(r)
+            if isinstance(t.op, ast.USub): r ="neg"
+            elif isinstance(t.op, ast.UAdd): r = "pos"
+            # abs
+            elif isinstance(t.op, ast.Invert): r = "invert"
+            
+            elif isinstance(t.op, ast.Not): r = "bool"
+            
+            else: assert False, t.op
+            
+            bs.this.append(
+                ast.Call(
+                    func=ast.Attribute(
+                        value=t.operand,
+                        attr='__%s__' % r,
+                        ctx=ast.Load(),
+                        ),
+                    args=[],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                    ),
+                )
+            
+            if isinstance(t.op, ast.Not):
+                @bs.this.append
+                def _(bs):
+                    assert bs.flow.stack[-1] is type_impl.Bool
+                    true = bs.program.get_unique_label()
+                    end = bs.program.get_unique_label()
+                    bs.code += isa.pop(registers.rax)
+                    bs.code += isa.cmp(registers.rax, 0)
+                    bs.code += isa.je(true)
+                    bs.code += isa.push(0)
+                    bs.code += isa.jmp(end)
+                    bs.code += true
+                    bs.code += isa.push(1)
+                    bs.code += end
         elif isinstance(t, ast.BinOp):
-            bs.this.append(t.left)
-            bs.this.append(t.right)
-            @bs.this.append
-            def _(bs, t=t):
-                right_type = bs.flow.stack.pop()
-                left_type = bs.flow.stack.pop()
-                
-                if isinstance(t.op, ast.Add): r = left_type + right_type
-                elif isinstance(t.op, ast.Sub): r = left_type - right_type
-                elif isinstance(t.op, ast.Mult): r = left_type * right_type
-                elif isinstance(t.op, ast.Div): r = left_type / right_type
-                elif isinstance(t.op, ast.FloorDiv): r = left_type // right_type
-                elif isinstance(t.op, ast.Mod): r = left_type % right_type
-                elif isinstance(t.op, ast.Pow): r = left_type ** right_type
-                elif isinstance(t.op, ast.BitAnd): r = left_type & right_type
-                elif isinstance(t.op, ast.BitOr): r = left_type | right_type
-                elif isinstance(t.op, ast.BitXor): r = left_type ^ right_type
-                elif isinstance(t.op, ast.LShift): r = left_type << right_type
-                elif isinstance(t.op, ast.RShift): r = left_type >> right_type
-                else: assert False, t.op
-                
-                bs.this.append(r)
+            if isinstance(t.op, ast.Add): r = "add"
+            elif isinstance(t.op, ast.Sub): r = "sub"
+            elif isinstance(t.op, ast.Mult): r = "mul"
+            elif isinstance(t.op, ast.FloorDiv): r = "floordiv"
+            elif isinstance(t.op, ast.Mod): r = "mod"
+            # divmod
+            elif isinstance(t.op, ast.Pow): r = "pow"
+            elif isinstance(t.op, ast.LShift): r = "lshift"
+            elif isinstance(t.op, ast.RShift): r = "rshift"
+            elif isinstance(t.op, ast.BitAnd): r = "and"
+            elif isinstance(t.op, ast.BitXor): r = "xor"
+            elif isinstance(t.op, ast.BitOr): r = "or"
+            
+            elif isinstance(t.op, ast.Div): r = "div"
+            # truediv
+            
+            else: assert False, t.op
+            
+            #bs.this.append(t.left)
+            #bs.this.append(t.right)
+            
+            #@bs.this.append
+            #def _(bs):
+            #    regs = list(good_regs)
+            #    right = pop(regs)
+            #    left = pop(regs)
+            #    push(left)
+            #    push(right)
+            
+            bs.this.append(
+                ast.Call(
+                    func=ast.Attribute(
+                        value=t.left,
+                        attr='__%s__' % r,
+                        ctx=ast.Load(),
+                        ),
+                    args=[t.right],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                    ),
+                )
+            
+            #@bs.this.append
+            #def _(bs):
+            #    result_type = bs.flow.stack[-1]
+            #    if result_type is type_impl.NotImplementedType:
+            #        bs.flow.stack.pop()
+            #        bs.this.append(
+            #            ast.Call(
+            #                func=ast.Attribute(
+            #                    value=t.left,
+            #                    attr='__%s__' % r,
+            #                    ctx=ast.Load(),
+            #                    ),
+            #                args=[t.right],
+            #                keywords=[],
+            #                starargs=None,
+            #                kwargs=None,
+            #                ),
+            #            )
         elif isinstance(t, ast.BoolOp):
             @util.memoize
             def make_post(flow, stack=list(bs.call_stack)):
