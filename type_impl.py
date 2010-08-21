@@ -313,6 +313,7 @@ class _Int(_Type):
         bs.flow.stack.append(IntFloorDivMeth)
     def getattr___mod__(self, bs):
         bs.flow.stack.append(IntModMeth)
+    
     def load_constant(self, value):
         assert isinstance(value, int)
         value = int(value)
@@ -321,98 +322,6 @@ class _Int(_Type):
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
         return _
-    def __neg__(self):
-        def _(bs):
-            bs.code += isa.pop(registers.rax)
-            bs.code += isa.neg(registers.rax)
-            bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(Int)
-        return _
-    
-    def __add__(self, other):
-        if isinstance(other, type(Int)):
-            def _(bs):
-                bs.code += isa.pop(registers.rbx)
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.add(registers.rax, registers.rbx)
-                bs.code += isa.push(registers.rax)
-                bs.flow.stack.append(Int)
-            return _
-        return NotImplemented
-    __radd__ = __add__
-    
-    def __sub__(self, other):
-        if isinstance(other, type(Int)):
-            def _(bs):
-                bs.code += isa.pop(registers.rbx)
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.sub(registers.rax, registers.rbx)
-                bs.code += isa.push(registers.rax)
-                bs.flow.stack.append(Int)
-            return _
-        return NotImplemented
-    
-    def __mul__(self, other):
-        if isinstance(other, type(Int)):
-            def _(bs):
-                bs.code += isa.pop(registers.rbx)
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.imul(registers.rax, registers.rbx)
-                bs.code += isa.push(registers.rax)
-                bs.flow.stack.append(Int)
-            return _
-        return NotImplemented
-    __rmul__ = __mul__
-    
-    def __div__(self, other):
-        if isinstance(other, type(Int)):
-            def _(bs):
-                bs.code += isa.pop(registers.rbx)
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.mov(registers.rdx, 0)
-                bs.code += isa.mov(registers.rax, registers.rax)
-                bs.code += isa.idiv(registers.rbx)
-                bs.code += isa.push(registers.rax)
-                bs.flow.stack.append(Int)
-            return _
-        return NotImplemented
-    
-    def __floordiv__(self, other):
-        if isinstance(other, type(Int)):
-            def _(bs):
-                bs.code += isa.pop(registers.rbx)
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.mov(registers.rdx, 0)
-                bs.code += isa.mov(registers.rax, registers.rax)
-                bs.code += isa.idiv(registers.rbx)
-                bs.code += isa.push(registers.rax)
-                bs.flow.stack.append(Int)
-            return _
-        return NotImplemented
-    
-    def __mod__(self, other):
-        if isinstance(other, type(Int)):
-            def _(bs):
-                bs.code += isa.pop(registers.rbx)
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.mov(registers.rdx, 0)
-                bs.code += isa.mov(registers.rax, registers.rax)
-                bs.code += isa.idiv(registers.rbx)
-                bs.code += isa.push(registers.rdx)
-                bs.flow.stack.append(Int)
-            return _
-        return NotImplemented
-    
-    def __or__(self, other):
-        if isinstance(other, type(Int)):
-            def _(bs):
-                bs.code += isa.pop(registers.rbx)
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.or_(registers.rax, registers.rbx)
-                bs.code += isa.push(registers.rax)
-                bs.flow.stack.append(Int)
-            return _
-        return NotImplemented
 Int = number(_Int())
 
 class _BoolStrMeth(_Type):
@@ -442,19 +351,14 @@ class _Bool(_Int):
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
         return _
-    def load_false(self):
+    def load_true(self):
         def _(bs):
             bs.code += isa.mov(registers.rax, 1)
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
         return _
-    def const_getattr(self, s):
-        if s == "__str__":
-            def _(bs):
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(BoolStrMeth)
-            return _
-        return _Int.const_getattr(self, s)
+    def getattr___str__(self, bs):
+        bs.flow.stack.append(BoolStrMeth)
 Bool = number(_Bool())
 
 class _FloatStrMeth(_Type):
