@@ -65,7 +65,7 @@ class NonGenerator(Executable):
         # pop uses rsp
         # memory access uses rbp
         # we need old stack current memory access
-        assert len(arg_types) <= len(self.t.args.args), [arg_types, self.t.args.args]
+        assert len(arg_types) <= len(self.t.args.args), [arg_types, self.t.args.args, self.name]
         for i, (arg_type, t) in enumerate(reversed(zip(arg_types, self.t.args.args))):
             assert isinstance(t, ast.Name)
             assert isinstance(t.ctx, ast.Param)

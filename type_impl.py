@@ -682,19 +682,12 @@ class ProtoInstance(_Type):
                         #old_size = sum(x.size for x, _ in slots.itervalues())
                         new_size = sum(x.size for x, _ in new_slots.itervalues())
                         
-                        
-                        bs.code += bs.program.get_label("AAA")
-                        
                         bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8)) # r14 = pointer to old slots data
                         
                         bs.code += isa.mov(registers.rax, util.malloc_addr)
                         bs.code += isa.mov(registers.rdi, 8 * new_size)
                         bs.code += isa.call(registers.rax)
                         bs.code += isa.mov(registers.r15, registers.rax) # r15 = pointer to new slots data
-                        
-                        #bs.code += isa.ud2()
-                        
-                        bs.code += bs.program.get_label("BBB")
                         
                         # move variables organized as slots in *r14 to as organized in new_slots in *r15
                         for attr_, (type_, pos_) in new_slots.iteritems():
@@ -717,17 +710,21 @@ class ProtoInstance(_Type):
                         
                         slots = new_slots
                     
-                    bs.code += bs.program.get_label("CCC")
-                    
                     bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8))
                     for i in xrange(type.size):
                         bs.code += isa.pop(MemRef(registers.r14, 8 * (slots[attr][1] + i)))
-                        
-                    bs.code += bs.program.get_label("DDD")
                 return _
             util.unlift(bs, _, "ProtoInstance.setattr_const_string")
         return _
     def const_getattr(self, attr):
+        if attr == '__class__':
+            def _(bs):
+                assert bs.flow.stack.pop() is self
+                for i in xrange(self.size):
+                    bs.code += isa.pop(registers.rax)
+                assert self.type.size == 0
+                bs.flow.stack.append(self.type)
+            return _
         def _(bs):
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.r12)
@@ -889,9 +886,13 @@ class _Method(_Type):
         return _
     def __call__(self, arg_types):
         def _(bs):
-            assert bs.flow.stack.pop(-1 - len(arg_types)) is self
-            bs.flow.stack.insert(-1 - len(arg_types), self.self_type)
-            bs.flow.stack.insert(-1 - len(arg_types), Function)
+            for arg in arg_types[::-1]:
+                assert bs.flow.stack.pop() is arg
+            assert bs.flow.stack.pop() is self
+            bs.flow.stack.append(Function)
+            bs.flow.stack.append(self.self_type)
+            for arg in arg_types:
+                bs.flow.stack.append(arg)
             bs.this.append(Function((self.self_type,) + arg_types))
         return _
 

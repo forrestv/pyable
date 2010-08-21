@@ -54,6 +54,18 @@ def list_pop(self, index=-1):
     return res
 list.pop = list_pop
 
+def list___mul__(self, other):
+    new = self.__class__()
+    i = 0
+    while i < other:
+        j = 0
+        while j < self.__used:
+            #a = self[j]
+        #b = new.append
+            new.append(self[j])
+    return new
+list.__mul__ = list___mul__
+
 def len(o):
     return o.__len__()
 
