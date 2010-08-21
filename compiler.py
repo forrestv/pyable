@@ -377,11 +377,12 @@ def translate(desc, flow, stack=None, this=None):
             @util.memoize
             def make_a(flow, t=t):
                 def _(bs):
+                    type = bs.flow.stack.pop()
+                    assert type is type_impl.Int
                     bs.code += isa.pop(registers.rax)
-                    rax_type = bs.flow.stack.pop()
-                    bs.code += isa.test(registers.rax, registers.rax)
+                    bs.code += isa.cmp(registers.rax, 0)
                     skip = bs.program.get_unique_label()
-                    bs.code += isa.jz(skip)
+                    bs.code += isa.jne(skip)
                     util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_b(bs.flow)))
                     bs.code += skip
                     util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c(bs.flow)))
