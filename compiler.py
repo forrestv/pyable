@@ -382,7 +382,7 @@ def translate(desc, flow, stack=None, this=None):
                     bs.code += isa.pop(registers.rax)
                     bs.code += isa.cmp(registers.rax, 0)
                     skip = bs.program.get_unique_label()
-                    bs.code += isa.jne(skip)
+                    bs.code += isa.je(skip)
                     util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_b(bs.flow)))
                     bs.code += skip
                     util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c(bs.flow)))
