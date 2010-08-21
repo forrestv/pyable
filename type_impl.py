@@ -21,14 +21,16 @@ def number(inst):
     return inst
 
 class _Type(object):
-    def copy(self):
-        return self.__class__()
     def __repr__(self):
-        return self.__class__.__name__
-    #def getattr(self):
-    #    return None
-    def getattr_const_string(self, s):
-        assert False, "%s has no attr '%s'" % (self, s)
+        return self.__class__.__name__[1:]
+    def const_getattr(self, s):
+        f = getattr(self, "getattr_" + s, None)
+        if f is None:
+            assert False, "%s has no attr '%s'" % (self, s)
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            f(bs)
+        return _
     def call_const(self, c):
         return None
     def to_python(self, data):
@@ -58,19 +60,19 @@ class _IntNonzeroMeth(_Type):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
-            bs.flow.stack.append(Int)
+            bs.flow.stack.append(Bool)
         return _
 IntNonzeroMeth = number(_IntNonzeroMeth())
 
-class _IntBoolMeth(_Type):
+class _IntPosMeth(_Type):
     size = 1
     def __call__(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
-            bs.flow.stack.append(Bool)
+            bs.flow.stack.append(Int)
         return _
-IntBoolMeth = number(_IntBoolMeth())
+IntPosMeth = number(_IntPosMeth())
 
 class _IntNegMeth(_Type):
     size = 1
@@ -296,11 +298,9 @@ class _Int(_Type):
     def getattr___neg__(self, bs):
         bs.flow.stack.append(IntNegMeth)
     def getattr___pos__(self, bs):
-        bs.flow.stack.append(IntNonzeroMeth)
+        bs.flow.stack.append(IntPosMeth)
     def getattr___invert__(self, bs):
         bs.flow.stack.append(IntInvertMeth)
-    def getattr___bool__(self, bs):
-        bs.flow.stack.append(IntBoolMeth)
     def getattr___add__(self, bs):
         bs.flow.stack.append(IntAddMeth)
     def getattr___sub__(self, bs):
@@ -313,12 +313,6 @@ class _Int(_Type):
         bs.flow.stack.append(IntFloorDivMeth)
     def getattr___mod__(self, bs):
         bs.flow.stack.append(IntModMeth)
-    def getattr_const_string(self, s):
-        f = getattr(self, "getattr_" + s)
-        def _(bs):
-            assert bs.flow.stack.pop() is self
-            f(bs)
-        return _
     def load_constant(self, value):
         assert isinstance(value, int)
         value = int(value)
@@ -454,13 +448,13 @@ class _Bool(_Int):
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
         return _
-    def getattr_const_string(self, s):
+    def const_getattr(self, s):
         if s == "__str__":
             def _(bs):
                 assert bs.flow.stack.pop() is self
                 bs.flow.stack.append(BoolStrMeth)
             return _
-        return _Int.getattr_const_string(self, s)
+        return _Int.const_getattr(self, s)
 Bool = number(_Bool())
 
 class _FloatStrMeth(_Type):
@@ -540,7 +534,7 @@ class _Float(_Type):
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
         return _
-    def getattr_const_string(self, s):
+    def const_getattr(self, s):
         def _(bs):
             assert bs.flow.stack[-1] is self
             if s == "__str__":
@@ -829,7 +823,7 @@ class ProtoInstance(_Type):
                 return _
             util.unlift(bs, _, "ProtoInstance.setattr_const_string")
         return _
-    def getattr_const_string(self, attr):
+    def const_getattr(self, attr):
         def _(bs):
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.r12)
@@ -855,7 +849,7 @@ class ProtoInstance(_Type):
                         
                         bs.this.append(methods[self].load())
                 return _
-            util.unlift(bs, _, "ProtoInstance.getattr_const_string")
+            util.unlift(bs, _, "ProtoInstance.const_getattr")
         return _
     def delattr_const_string(self, attr):
         def _(bs):
@@ -929,7 +923,7 @@ class _Str(_Type):
         i, = struct.unpack("q", data)
         length, = struct.unpack("l", ctypes.string_at(i, 8))
         return ctypes.string_at(i+8, length)
-    def getattr_const_string(self, s):
+    def const_getattr(self, s):
         def _(bs):
             assert bs.flow.stack[-1] is self
             if s == "__str__":
@@ -1017,7 +1011,7 @@ class _NoneType(_Type):
         return _
     def to_python(self, data):
         assert not data
-    def getattr_const_string(self, s):
+    def const_getattr(self, s):
         def _(bs):
             assert bs.flow.stack[-1] is self
             if s == "__str__":

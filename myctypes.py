@@ -48,7 +48,7 @@ def load_cdll(name):
     class _CDLLInst(type_impl._Type):
         size = 0
         cdll = ctypes.CDLL(name)
-        def getattr_const_string(self, s):
+        def const_getattr(self, s):
             def _(bs):
                 assert bs.flow.stack.pop() is self
                 bs.flow.stack.append(wrap_func(self.cdll[s]))
@@ -68,7 +68,7 @@ CDLL = type_impl.number(_CDLL())
 
 class _CtypesModule(type_impl._Type):
     size = 0
-    def getattr_const_string(self, s):
+    def const_getattr(self, s):
         if s == "CDLL":
             def _(bs):
                 assert bs.flow.stack.pop() is self

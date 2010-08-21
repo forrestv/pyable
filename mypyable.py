@@ -196,7 +196,7 @@ class _Raw(type_impl._Type):
             
             bs.code += isa.mov(MemRef(registers.rax), registers.rcx)
         return _
-    def getattr_const_string(self, attr):
+    def const_getattr(self, attr):
         if attr == "store_object":
             def _(bs):
                 assert bs.flow.stack.pop() is self
@@ -246,7 +246,7 @@ SetListImpl = type_impl.number(_SetListImpl())
 
 class _PyableModule(type_impl._Type):
     size = 0
-    def getattr_const_string(self, s):
+    def const_getattr(self, s):
         if s == "type":
             def _(bs):
                 assert bs.flow.stack.pop() is self

@@ -531,7 +531,7 @@ def translate(desc, flow, stack=None, this=None):
             # abs
             elif isinstance(t.op, ast.Invert): r = "invert"
             
-            elif isinstance(t.op, ast.Not): r = "bool"
+            elif isinstance(t.op, ast.Not): r = "nonzero"
             
             else: assert False, t.op
             
@@ -655,7 +655,7 @@ def translate(desc, flow, stack=None, this=None):
                         )
                 @bs.this.append
                 def _(bs, t=t, make_post=make_post):
-                    assert bs.flow.stack.pop() is type_impl.Int
+                    assert bs.flow.stack.pop() in (type_impl.Int, type_impl.Bool)
                     bs.code += isa.pop(registers.rax)
                     skip = bs.program.get_unique_label()
                     bs.code += isa.test(registers.rax, registers.rax)
@@ -853,7 +853,7 @@ def translate(desc, flow, stack=None, this=None):
                 bs.this.append(t.value)
                 @bs.this.append
                 def _(bs, t=t):
-                    bs.this.append(bs.flow.stack[-1].getattr_const_string(t.attr))
+                    bs.this.append(bs.flow.stack[-1].const_getattr(t.attr))
             elif isinstance(t.ctx, ast.Store):
                 bs.this.append(t.value)
                 @bs.this.append
