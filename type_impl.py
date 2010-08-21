@@ -842,7 +842,8 @@ class _Function(_Type):
     def __call__(self, arg_types):
         def _(bs):
             assert bs.flow.stack[-1 - len(arg_types)] is self
-            bs.code += isa.push(MemRef(registers.rsp, 8*len(arg_types)))
+            arg_size = sum(x.size for x in arg_types)
+            bs.code += isa.push(MemRef(registers.rsp, 8*arg_size))
             
             def _(value):
                 def _(bs):
