@@ -42,7 +42,6 @@ class NonGenerator(Executable):
         Executable.__init__(self)
         assert isinstance(t, ast.FunctionDef)
         self.t = t
-        self.is_generator = is_generator(self.t)
     @property
     def name(self):
         return self.t.name
@@ -50,10 +49,6 @@ class NonGenerator(Executable):
         assert not self.t.args.vararg
         assert not self.t.args.kwarg
         this = []
-        
-        if self.is_generator:
-            # store rsp, rip
-            pass
         
         # isa.push(registers.rip)
         # isa.jmp(<here>)
@@ -66,17 +61,24 @@ class NonGenerator(Executable):
         # memory access uses rbp
         # we need old stack current memory access
         assert len(arg_types) <= len(self.t.args.args), [arg_types, self.t.args.args, self.name]
+        pos = 16
         for i, (arg_type, t) in enumerate(reversed(zip(arg_types, self.t.args.args))):
             assert isinstance(t, ast.Name)
             assert isinstance(t.ctx, ast.Param)
-            def _(bs, arg_type=arg_type, i=i):
+            def _(bs, arg_type=arg_type, pos=pos):
                 bs.flow.stack.append(arg_type)
-                bs.code += isa.push(MemRef(registers.rbp, 16 + 8 * i))
+                for i in reversed(xrange(arg_type.size)):
+                    bs.code += isa.push(MemRef(registers.rbp, pos + i * 8))
+            pos += 8 * arg_type.size
             this.append(ast.Assign(
                 targets=[ast.Name(id=t.id, ctx=ast.Store())],
                 value=_,
             ))
             # pop memref(registers.rbp, -x)
+        @this.append
+        def _(bs, pos=pos):
+            bs.code += isa.mov(registers.rax, MemRef(registers.rbp, pos))
+            bs.code += isa.mov(MemRef(registers.rbp, -8), registers.rax)
         for t, v in zip(self.t.args.args[::-1][:len(self.t.args.args)-len(arg_types)], self.t.args.defaults[::-1]):
             this.append(ast.Assign(
                 targets=[ast.Name(id=t.id, ctx=ast.Store())],
@@ -95,6 +97,7 @@ class Flow(object):
         self.var_type_impl = {}
         self.stack = []
         self.ctrl_stack = []
+        self.allocd_locals = False
     
     def __repr__(self):
         return "Flow<%r>" % self.__dict__
@@ -162,7 +165,7 @@ class BlockStatus(object):
         self.code = self.program.get_stream()
     
     def finalise(self):
-        while True:
+        while False:
             old = self.code
             res = self.program.get_stream()
             for i in xrange(len(old)):
@@ -194,6 +197,16 @@ class BlockStatus(object):
         blocks.append(self.program)
         
         return self.program
+
+def alloc_locals(bs):
+    if bs.flow.allocd_locals:
+        return
+    
+    # needs to convert!
+    
+    bs.this.append(type_impl.Scope.create())
+    
+    bs.flow.allocd_locals = True
 
 blocks = []
 
@@ -241,6 +254,7 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.Module):
             assert False
         elif isinstance(t, ast.Lambda):
+            alloc_locals(bs)
             key = len(type_impl.functions)
             type_impl.functions.append(Function(ast.FunctionDef(
                 name="<lambda>",
@@ -250,12 +264,17 @@ def translate(desc, flow, stack=None, this=None):
             )))
             bs.code += isa.mov(registers.rax, key)
             bs.code += isa.push(registers.rax)
+            bs.code += isa.mov(registers.rax, MemRef(registers.rbp, -8))
+            bs.code += isa.push(registers.rax)
             bs.flow.stack.append(type_impl.Function)
         elif isinstance(t, ast.FunctionDef):
+            alloc_locals(bs)
             def _(bs, t=t):
                 key = len(type_impl.functions)
                 type_impl.functions.append(Function(t))
                 bs.code += isa.mov(registers.rax, key)
+                bs.code += isa.push(registers.rax)
+                bs.code += isa.mov(registers.rax, MemRef(registers.rbp, -8))
                 bs.code += isa.push(registers.rax)
                 bs.flow.stack.append(type_impl.Function)
             # could be optimized
@@ -314,15 +333,15 @@ def translate(desc, flow, stack=None, this=None):
             if isinstance(t.ctx, ast.Load):
                 if t.id == 'None':
                     bs.this.append(type_impl.NoneType.load())
+                elif t.id == 'True':
+                    bs.this.append(type_impl.Bool.load_true())
+                elif t.id == 'False':
+                    bs.this.append(type_impl.Bool.load_false())
                 else:
                     try:
                         type, loc = bs.flow.get_var_type(t.id), bs.flow.get_var_loc(t.id)
                     except KeyError:
-                        # scope scope scope scope scope scope scope snope testing testing one two three
-                        pass
-                        raise
-                        bs.code += isa.push(0)
-                        bs.flow.stack.append(type_impl.Function)
+                        bs.this.append(type_impl.Scope.get_name(t.id))
                     else:
                         for i in xrange(type.size):
                             bs.code += isa.mov(registers.rax, MemRef(registers.rbp, loc + i * 8))
@@ -330,11 +349,16 @@ def translate(desc, flow, stack=None, this=None):
                         bs.flow.stack.append(type)
             elif isinstance(t.ctx, ast.Store):
                 assert t.id != 'None'
-                type = bs.flow.stack.pop()
-                bs.flow.set_var_type(t.id, type)
-                for i in reversed(xrange(type.size)):
-                    bs.code += isa.pop(registers.rax)
-                    bs.code += isa.mov(MemRef(registers.rbp, bs.flow.get_var_loc(t.id) + i * 8), registers.rax)
+                assert t.id != 'True'
+                assert t.id != 'False'
+                if bs.flow.allocd_locals:
+                    bs.this.append(type_impl.Scope.set_name(t.id))
+                else:
+                    type = bs.flow.stack.pop()
+                    bs.flow.set_var_type(t.id, type)
+                    for i in reversed(xrange(type.size)):
+                        bs.code += isa.pop(registers.rax)
+                        bs.code += isa.mov(MemRef(registers.rbp, bs.flow.get_var_loc(t.id) + i * 8), registers.rax)
             else:
                 assert False, t.ctx
         elif isinstance(t, ast.If) or isinstance(t, ast.IfExp):

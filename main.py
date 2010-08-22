@@ -41,7 +41,9 @@ main_module = compiler.Function(ast.FunctionDef(
 
 def make_root():
     return compiler.translate("make_root", compiler.Flow(None), this=[
+        lambda bs: bs.code.add(isa.push(0)), # moot scope
         main_module(),
+        lambda bs: bs.code.add(isa.pop(registers.rax)), # moot scope
         lambda bs: bs.code.add(isa.ret()),
         None,
     ])
@@ -64,3 +66,5 @@ processor.execute(caller)
 if util.DEBUG:
     end = time.time()
     print "END", end - start
+
+util.post()

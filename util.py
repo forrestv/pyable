@@ -233,9 +233,17 @@ def get_asm_glue(dest):
     l.references.append(dest)
     return l
 
+redirections = 0
+triggered_redirections = 0
+
 def add_redirection(caller_code, callback):
+        global redirections
+        redirections += 1
+        
         @called_from_asm
         def glue(rdi):
+            global triggered_redirections
+            triggered_redirections += 1
             caller_program.render_code[caller_start.position:caller_end.position] = callback(rdi)
             caller_program.references.remove(code)
         
@@ -252,6 +260,10 @@ def add_redirection(caller_code, callback):
         caller_code += caller_end
         
         caller_program.references.append(code)
+
+def post():
+    if DEBUG:
+        print "redirection stats:", triggered_redirections, "/", redirections
 
 @called_from_asm
 def print_int64(i):

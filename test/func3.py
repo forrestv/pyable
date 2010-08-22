@@ -7,7 +7,7 @@ y = -x*2
 print x
 print y
 
-while x < 10000000:
+while x < 1000000:
     x = get_new_x(x)
 
 print y
