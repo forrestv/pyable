@@ -22,7 +22,7 @@ def number(inst):
 
 class _Type(object):
     def __repr__(self):
-        return self.__class__.__name__[1:]
+        return self.__class__.__name__
     def const_getattr(self, s):
         f = getattr(self, "getattr_" + s, None)
         if f is None:
@@ -624,18 +624,19 @@ class ProtoObject(_Type):
 
 @apply
 class Scope(object):
-    slots = [{}]
+    slots = [None, {}]
     
     def create(self):
         def _(bs):
+            assert not bs.flow.allocd_locals
             bs.code += isa.mov(registers.rdi, 8 * 3)
             bs.code += isa.mov(registers.rax, util.malloc_addr)
             bs.code += isa.call(registers.rax)
             
-            bs.code += isa.mov(MemRef(registers.rax), 0) # {} slot
+            bs.code += isa.mov(MemRef(registers.rax), 1) # {} slot
             bs.code += isa.mov(MemRef(registers.rax, 8), 0) # NULL pointer
             bs.code += isa.mov(registers.rbx, MemRef(registers.rbp, -8)) # NULL pointer
-            bs.code += isa.mov(MemRef(registers.rax, 16), registers.rbx) # NULL pointer
+            bs.code += isa.mov(MemRef(registers.rax, 16), registers.rbx) # parent
             
             bs.code += isa.mov(MemRef(registers.rbp, -8), registers.rax)
         return _
@@ -657,6 +658,8 @@ class Scope(object):
                         else:
                             new_id = len(self.slots)
                             self.slots.append(new_slots)
+                        
+                        print slots, new_slots, slot_id, new_id
                         
                         #old_size = sum(x.size for x, _ in slots.itervalues())
                         new_size = sum(x.size for x, _ in new_slots.itervalues())
@@ -698,15 +701,31 @@ class Scope(object):
     def get_name(self, attr):
         def _(bs):
             bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
+            bs.code += isa.cmp(registers.r12, 0)
+            bs.code += isa.push(-1)
+            skip = bs.program.get_unique_label()
+            bs.code += isa.je(skip)
+            bs.code += isa.pop(registers.rax)
             bs.code += isa.push(MemRef(registers.r12)) # slot id
-            def load_in(value):
+            bs.code += skip
+            
+            def load_in(slot_id):
+                if slot_id == -1: assert False, attr + " not found"
                 def _(bs):
-                    slots = self.slots[value]
+                    slots = self.slots[slot_id]
+                    
+                    print "ARARA", slot_id, slots
                     try:
                         type, pos = slots[attr]
                     except KeyError:
                         bs.code += isa.mov(registers.r12, MemRef(registers.r12, 16)) # scope object
+                        bs.code += isa.cmp(registers.r12, 0)
+                        bs.code += isa.push(-1)
+                        skip = bs.program.get_unique_label()
+                        bs.code += isa.je(skip)
+                        bs.code += isa.pop(registers.rax)
                         bs.code += isa.push(MemRef(registers.r12)) # slot id
+                        bs.code += skip
                         util.unlift(bs, load_in, "Scope.get_name")
                     else:
                         bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8))
@@ -890,6 +909,30 @@ class ProtoInstance(_Type):
             res[name] = type
         return res
     def getitem(self):
+        def _(bs):
+            #   self, index
+            # swap
+            #   index, self
+            # getattr(-1, "__getitem__")
+            #   index, __getitem__ method
+            # swap
+            #   __getitem__ method, index
+            # call
+            #   result
+            
+            bs.this.append(util.swap)
+            
+            def _(bs):
+                assert bs.flow.stack[-1] is self
+            bs.this.append(ast.Attribute(value=_, attr='__getitem__', ctx=ast.Load()))
+            
+            bs.this.append(util.swap)
+            
+            def _(bs):
+                pass
+            bs.this.append(ast.Call(func=_, args=[_], keywords=[], starargs=None, kwargs=None))
+        return _
+    def setitem(self):
         def _(bs):
             #   self, index
             # swap

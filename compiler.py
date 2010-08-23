@@ -56,7 +56,7 @@ class NonGenerator(Executable):
         def _(bs):
             bs.code += isa.push(registers.rbp)
             bs.code += isa.mov(registers.rbp, registers.rsp)
-            bs.code += isa.sub(registers.rsp, bs.flow.space * 8)
+            bs.code += isa.sub(registers.rsp, bs.flow.space * 32)
         # pop uses rsp
         # memory access uses rbp
         # we need old stack current memory access
@@ -98,6 +98,7 @@ class Flow(object):
         self.stack = []
         self.ctrl_stack = []
         self.allocd_locals = False
+        self.class_stack = []
     
     def __repr__(self):
         return "Flow<%r>" % self.__dict__
@@ -122,7 +123,7 @@ class Flow(object):
         except KeyError:
             if len(self.vars) == self.space:
                 raise MemoryError # hehe
-            self.vars[name] = len(self.vars) * 8
+            self.vars[name] = len(self.vars) * 32
             return self.get_var_loc(name)
     def set_var_type(self, name, type):
         self.var_type_impl[name] = type
@@ -136,6 +137,8 @@ class Flow(object):
         r.var_type_impl.update(self.var_type_impl)
         r.stack[:] = self.stack
         r.ctrl_stack[:] = self.ctrl_stack
+        r.allocd_locals = self.allocd_locals
+        r.class_stack[:] = self.class_stack
         return r
 
 class FrozenFlow(object):
@@ -204,9 +207,11 @@ def alloc_locals(bs):
     
     # needs to convert!
     
-    bs.this.append(type_impl.Scope.create())
+    type_impl.Scope.create()(bs)
     
-    bs.flow.allocd_locals = True
+    @bs.this.append
+    def _(bs):
+        bs.flow.allocd_locals = True
 
 blocks = []
 
@@ -297,15 +302,18 @@ def translate(desc, flow, stack=None, this=None):
                         assert isinstance(target.ctx, ast.Store)
                         
                         @bs.this.append
-                        def _(bs):
+                        def _(bs, target=target):
                             type = bs.flow.stack[-1]
                             
                             for i in xrange(type.size):
                                 bs.code += isa.push(MemRef(registers.rsp, 8*type.size - 8))
                             
                             bs.flow.stack.append(type)
-                        
-                        bs.this.append(target)
+                            
+                            if bs.flow.class_stack:
+                                assert False
+                            
+                            bs.this.append(target)
                     
                     @bs.this.append
                     def _(bs):
@@ -313,7 +321,19 @@ def translate(desc, flow, stack=None, this=None):
                         for i in xrange(type.size):
                             bs.code += isa.pop(registers.rax)
             else:
-                bs.this.append(t.targets[0])
+                target = t.targets[0]
+                if bs.flow.class_stack:
+                    assert isinstance(target, ast.Name)
+                    assert len(bs.flow.class_stack) == 1
+                    target = ast.Attribute(
+                        value=ast.Name(
+                            id=bs.flow.class_stack[0],
+                            ctx=ast.Load(),
+                            ),
+                        attr=target.id,
+                        ctx=ast.Store(),
+                        )
+                bs.this.append(target)
         elif isinstance(t, ast.Expr):
             bs.this.append(t.value)
             @bs.this.append
@@ -339,6 +359,7 @@ def translate(desc, flow, stack=None, this=None):
                     bs.this.append(type_impl.Bool.load_false())
                 else:
                     try:
+                        if bs.flow.allocd_locals: raise KeyError
                         type, loc = bs.flow.get_var_type(t.id), bs.flow.get_var_loc(t.id)
                     except KeyError:
                         bs.this.append(type_impl.Scope.get_name(t.id))
@@ -361,6 +382,13 @@ def translate(desc, flow, stack=None, this=None):
                         bs.code += isa.mov(MemRef(registers.rbp, bs.flow.get_var_loc(t.id) + i * 8), registers.rax)
             else:
                 assert False, t.ctx
+        elif isinstance(t, ast.Global):
+            for name in t.names:
+                assert name != 'None'
+                assert name != 'True'
+                assert name != 'False'
+                if bs.flow.allocd_locals:
+                    xx
         elif isinstance(t, ast.If) or isinstance(t, ast.IfExp):
             # instead of memoize, avoid jumps with a jump from new to midway through original if flow is the same
             
@@ -892,11 +920,31 @@ def translate(desc, flow, stack=None, this=None):
             else:
                 assert False
         elif isinstance(t, ast.ClassDef):
-            #bs.flow.class_stack
-            t.name
-            t.bases
-            t.body
-            t.decorator_list
+            assert not t.bases
+            assert not t.decorator_list
+            
+            import mypyable
+            
+            bs.this.append(ast.Assign(
+                targets=[ast.Name(id=t.name, ctx=ast.Store())],
+                value=ast.Call(
+                    func=mypyable.Type.load(),
+                    args=[type_impl.Str.load_constant(t.name), type_impl.NoneType.load(), type_impl.NoneType.load()],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                    ),
+            ))
+            
+            @bs.this.append
+            def _(bs, t=t):
+                bs.flow.class_stack.append(t.name)
+            
+            bs.this.append(t.body)
+            
+            @bs.this.append
+            def _(bs, t=t):
+                assert bs.flow.class_stack.pop() == t.name
         elif isinstance(t, ast.Delete):
             for target in t.targets:
                 assert isinstance(target.ctx, ast.Del)

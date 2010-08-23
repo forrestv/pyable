@@ -1,3 +1,6 @@
+def a():
+  pass
+
 import _pyable
 
 list = _pyable.type("list", None, None)
@@ -79,6 +82,8 @@ def len(o):
 
 _pyable.set_list_impl(list)
 
+def nothing(x):
+    return x
 
 def map(f, iterable):
     print "map"
@@ -88,6 +93,7 @@ def map(f, iterable):
     while i < j:
         res.append(f(iterable[i]))
         i += 1
+    print "end map"
     return res
 
 print 1
@@ -130,7 +136,7 @@ Array1Glob = [0]*51
 
 print 5
 
-Array2Glob = map(lambda x: x[:], [Array1Glob]*51)
+Array2Glob = map(lambda x: map(nothing, x), [Array1Glob]*51)
 PtrGlb = None
 PtrGlbNext = None
 
@@ -301,5 +307,5 @@ def Func3(EnumParIn):
     EnumLoc = EnumParIn
     if EnumLoc == Ident3: return TRUE
     return FALSE
-
+print "ahh"
 Proc0(LOOPS)

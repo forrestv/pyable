@@ -62,6 +62,10 @@ class _PythonFunction(type_impl._Type):
                 return _
             util.unlift(bs, _, "PythonFunction.__call__")
         return _
+    def load(self):
+        def _(bs):
+            bs.flow.stack.append(self)
+        return _
 
 class _Type(_PythonFunction):
     def handler(self, name, bases, dict=None):
