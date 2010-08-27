@@ -1080,17 +1080,19 @@ class StrGetitemMeth(_Type):
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.r12)
             
+            skip = bs.program.get_unique_label()
+            bs.code += isa.test(registers.r12, 1)
+            bs.code += isa.jz(skip)
+            
+            bs.code += isa.mov(registers.r12, registers.rsp)
+            bs.code += isa.sub(registers.r12, 7)
+            
+            bs.code += skip
+            
             bs.code += isa.add(registers.r12, 8)
-            bs.code += isa.shl(registers.r13, 3)
             bs.code += isa.add(registers.r12, registers.r13)
-            bs.code += isa.mov(registers.r13, MemRef(registers.r12))
-            
-            bs.code += isa.mov(registers.rax, util.malloc_addr)
-            bs.code += isa.mov(registers.rdi, 8 * 2)
-            bs.code += isa.call(registers.rax)
-            
-            bs.code += isa.mov(MemRef(registers.rax), 1)
-            bs.code += isa.mov(MemRef(registers.rax, 8), registers.r13)
+            bs.code += isa.mov(registers.rax, 1)
+            bs.code += isa.mov(registers.ah, MemRef(registers.r12, data_size=8))
             
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Str)
@@ -1106,9 +1108,10 @@ class StrOrdMeth(_Type):
             bs.code += isa.pop(registers.rax)
             
             bs.code += isa.add(registers.rax, 8)
-            bs.code += isa.mov(registers.rax, MemRef(registers.r12))
+            bs.code += isa.mov(registers.r12, 0)
+            bs.code += isa.mov(registers.r12b, MemRef(registers.rax, data_size=8))
             
-            bs.code += isa.push(registers.rax)
+            bs.code += isa.push(registers.r12)
             bs.flow.stack.append(Int)
         return _
 

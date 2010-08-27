@@ -66,22 +66,14 @@ def list_pop(self, index=-1):
 list.pop = list_pop
 
 def list___mul__(self, other):
-    print "other", other, self._used, 1 < self._used
     new = self.__class__()
     i = 0
     while i < other:
         j = 0
-        print i
-        print "XXX", 1 < self._used
         while j < self._used:
-            #a = self[j]
-        #b = new.append
-            print j < self._used, "should be 1"
-            print new is self
             new.append(self[j])
             j += 1
         i += 1
-    print "other2"
     return new
 list.__mul__ = list___mul__
 
@@ -96,14 +88,12 @@ def nothing(x):
     return x
 
 def map(f, iterable):
-    print "map"
     res = []
     i = 0
     j = iterable.__len__()
     while i < j:
         res.append(f(iterable[i]))
         i += 1
-    print "end map"
     return res
 
 def chr(i):
@@ -112,15 +102,11 @@ def chr(i):
 def ord(i):
     return i.__ord__()
 
-print 1
-
-LOOPS = 100000
+LOOPS = 1000000
 
 __version__ = "1.1"
 
 Ident1, Ident2, Ident3, Ident4, Ident5 = 1, 2, 3, 4, 5
-
-print 2
 
 class Record:
 
@@ -136,8 +122,6 @@ class Record:
         return Record(self.PtrComp, self.Discr, self.EnumComp,
                       self.IntComp, self.StringComp)
 
-print 3
-
 TRUE = 1
 FALSE = 0
 
@@ -146,17 +130,11 @@ BoolGlob = FALSE
 Char1Glob = '\0'
 Char2Glob = '\0'
 
-print 6
-
 Array1Glob = [0]*51
-
-print 5
 
 Array2Glob = map(lambda x: map(nothing, x), [Array1Glob]*51)
 PtrGlb = None
 PtrGlbNext = None
-
-print 4
 
 def Proc0(loops):
     global IntGlob
@@ -180,7 +158,6 @@ def Proc0(loops):
 
     i = 0
     while i < loops:
-        print "loop", i
         Proc5()
         Proc4()
         IntLoc1 = 2
@@ -325,5 +302,5 @@ def Func3(EnumParIn):
     EnumLoc = EnumParIn
     if EnumLoc == Ident3: return TRUE
     return FALSE
-print "ahh"
+
 Proc0(LOOPS)
