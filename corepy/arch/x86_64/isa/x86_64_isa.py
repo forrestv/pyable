@@ -1411,6 +1411,10 @@ class rdtscp(Instruction):
   machine_inst = no_op
   params = {'opcode':[0x0F, 0x01, 0xF9], 'modrm':None}
   
+class repz(Instruction):
+  machine_inst = no_op
+  params = {'opcode':[0xF3], 'modrm':None}
+
 class ret(DispatchInstruction):
   dispatch = (
     (no_op,               {'opcode':[0xC3],             'modrm':None}),

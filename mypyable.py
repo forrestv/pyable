@@ -67,14 +67,15 @@ class _PythonFunction(type_impl._Type):
             bs.flow.stack.append(self)
         return _
 
-class _Type(_PythonFunction):
+@apply
+class Type(_PythonFunction):
     def handler(self, name, bases, dict=None):
         if dict is None:
             dict = {}
         return type_impl.ProtoObject(name, bases, dict)
-Type = type_impl.number(_Type())
 
-class _Type_Number(type_impl._Type):
+@apply
+class Type_Number(type_impl._Type):
     size = 0
     def __call__(self, arg_types):
         assert len(arg_types) == 1
@@ -88,9 +89,9 @@ class _Type_Number(type_impl._Type):
             bs.code += isa.push(arg_types[0].id)
             bs.flow.stack.append(type_impl.Int)
         return _
-Type_Number = type_impl.number(_Type_Number())
 
-class _RawStoreObjectMeth(type_impl._Type):
+@apply
+class RawStoreObjectMeth(type_impl._Type):
     size = 1
     def __call__(self, arg_types):
         assert len(arg_types) == 2, arg_types
@@ -115,10 +116,9 @@ class _RawStoreObjectMeth(type_impl._Type):
             bs.code += isa.push(1 + type.size)
             bs.flow.stack.append(type_impl.Int)
         return _
-RawStoreObjectMeth = type_impl.number(_RawStoreObjectMeth())
 
-
-class _RawLoadObjectMeth(type_impl._Type):
+@apply
+class RawLoadObjectMeth(type_impl._Type):
     size = 1
     def __call__(self, arg_types):
         assert len(arg_types) == 1
@@ -143,9 +143,9 @@ class _RawLoadObjectMeth(type_impl._Type):
                 return _
             util.unlift(bs, _, "RawLoadObjectMeth.__call__")
         return _
-RawLoadObjectMeth = type_impl.number(_RawLoadObjectMeth())
 
-class _RawCopyFromMeth(type_impl._Type):
+@apply
+class RawCopyFromMeth(type_impl._Type):
     size = 1
     def __call__(self, arg_types):
         assert len(arg_types) == 2
@@ -169,11 +169,13 @@ class _RawCopyFromMeth(type_impl._Type):
             
             bs.this.append(type_impl.NoneType.load())
         return _
-RawCopyFromMeth = type_impl.number(_RawCopyFromMeth())
 
-class _Raw(type_impl._Type):
+@apply
+class RawGetitemMeth(type_impl._Type):
     size = 1
-    def getitem(self):
+    def __call__(self, arg_types):
+        assert len(arg_types) == 1
+        assert arg_types[0] is type_impl.Int
         def _(bs):
             assert bs.flow.stack.pop() is type_impl.Int
             bs.code += isa.pop(registers.rbx)
@@ -186,42 +188,39 @@ class _Raw(type_impl._Type):
             bs.code += isa.push(MemRef(registers.rax))
             bs.flow.stack.append(type_impl.Int)
         return _
-    def setitem(self):
+@apply
+class RawSetitemMeth(type_impl._Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 2, arg_types
+        assert arg_types[0] is type_impl.Int
+        assert arg_types[1] is type_impl.Int
         def _(bs):
+            assert bs.flow.stack.pop() is type_impl.Int
+            bs.code += isa.pop(registers.rcx)
             assert bs.flow.stack.pop() is type_impl.Int
             bs.code += isa.pop(registers.rbx)
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.rax)
-            assert bs.flow.stack.pop() is type_impl.Int
-            bs.code += isa.pop(registers.rcx)
             
             bs.code += isa.shl(registers.rbx, 3)
             bs.code += isa.add(registers.rax, registers.rbx)
             
             bs.code += isa.mov(MemRef(registers.rax), registers.rcx)
+            
+            type_impl.NoneType.load()(bs)
         return _
-    def const_getattr(self, attr):
-        if attr == "store_object":
-            def _(bs):
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(RawStoreObjectMeth)
-            return _
-        elif attr == "load_object":
-            def _(bs):
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(RawLoadObjectMeth)
-            return _
-        elif attr == "copy_from":
-            def _(bs):
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(RawCopyFromMeth)
-            return _
-        else:
-            assert False, attr
-        
-Raw = type_impl.number(_Raw())
+@apply
+class Raw(type_impl._Type):
+    size = 1
+    def getattr___getitem__(self, bs): bs.flow.stack.append(RawGetitemMeth)
+    def getattr___setitem__(self, bs): bs.flow.stack.append(RawSetitemMeth)
+    def getattr_load_object(self, bs): bs.flow.stack.append(RawLoadObjectMeth)
+    def getattr_store_object(self, bs): bs.flow.stack.append(RawStoreObjectMeth)
+    def getattr_copy_from(self, bs): bs.flow.stack.append(RawCopyFromMeth)
 
-class _RawType(type_impl._Type):
+@apply
+class RawType(type_impl._Type):
     size = 0
     def __call__(self, arg_types):
         assert len(arg_types) == 1
@@ -236,19 +235,19 @@ class _RawType(type_impl._Type):
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Raw)
         return _
-RawType = type_impl.number(_RawType())
 
 list_impl = None
 
-class _SetListImpl(_PythonFunction):
+@apply
+class SetListImpl(_PythonFunction):
     def handler(self, new):
         global list_impl
         assert list_impl is None, "list_impl can only be set once"
         list_impl = new
         return type_impl.NoneType
-SetListImpl = type_impl.number(_SetListImpl())
 
-class _PyableModule(type_impl._Type):
+@apply
+class PyableModule(type_impl._Type):
     size = 0
     def const_getattr(self, s):
         if s == "type":
@@ -273,4 +272,3 @@ class _PyableModule(type_impl._Type):
             return _
         else:
             assert False, s
-PyableModule = type_impl.number(_PyableModule())

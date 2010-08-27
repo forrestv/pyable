@@ -168,7 +168,7 @@ class BlockStatus(object):
         self.code = self.program.get_stream()
     
     def finalise(self):
-        while False:
+        while True:
             old = self.code
             res = self.program.get_stream()
             for i in xrange(len(old)):
@@ -360,7 +360,9 @@ def translate(desc, flow, stack=None, this=None):
                 else:
                     try:
                         if bs.flow.allocd_locals: raise KeyError
-                        type, loc = bs.flow.get_var_type(t.id), bs.flow.get_var_loc(t.id)
+                        type = bs.flow.get_var_type(t.id)
+                        if type is None: raise KeyError
+                        loc = bs.flow.get_var_loc(t.id)
                     except KeyError:
                         bs.this.append(type_impl.Scope.get_name(t.id))
                     else:
@@ -372,7 +374,7 @@ def translate(desc, flow, stack=None, this=None):
                 assert t.id != 'None'
                 assert t.id != 'True'
                 assert t.id != 'False'
-                if bs.flow.allocd_locals:
+                if bs.flow.allocd_locals or bs.flow.var_type_impl.get(t.id, "") is None:
                     bs.this.append(type_impl.Scope.set_name(t.id))
                 else:
                     type = bs.flow.stack.pop()
@@ -388,7 +390,9 @@ def translate(desc, flow, stack=None, this=None):
                 assert name != 'True'
                 assert name != 'False'
                 if bs.flow.allocd_locals:
-                    xx
+                    bs.this.append(type_impl.Scope.set_global(name))
+                else:
+                    bs.flow.set_var_type(name, None)
         elif isinstance(t, ast.If) or isinstance(t, ast.IfExp):
             # instead of memoize, avoid jumps with a jump from new to midway through original if flow is the same
             
@@ -416,7 +420,7 @@ def translate(desc, flow, stack=None, this=None):
             @bs.this.append
             def _(bs, t=t):
                 type = bs.flow.stack.pop()
-                assert type is type_impl.Int, type
+                assert type is type_impl.Int or type is type_impl.Bool, type
                 bs.code += isa.pop(registers.rax)
                 bs.code += isa.test(registers.rax, registers.rax)
                 skip = bs.program.get_unique_label()
@@ -430,7 +434,7 @@ def translate(desc, flow, stack=None, this=None):
             def make_a(flow, t=t):
                 def _(bs):
                     type = bs.flow.stack.pop()
-                    assert type is type_impl.Int
+                    assert type is type_impl.Int or type is type_impl.Bool
                     bs.code += isa.pop(registers.rax)
                     bs.code += isa.cmp(registers.rax, 0)
                     skip = bs.program.get_unique_label()
@@ -474,10 +478,10 @@ def translate(desc, flow, stack=None, this=None):
             bs.this.append(None)
         elif isinstance(t, ast.Compare):
             assert len(t.ops) == 1 and len(t.comparators) == 1
-            bs.this.append(t.left)
-            bs.this.append(t.comparators[0])
             op = t.ops[0]
             if isinstance(op, ast.Is) or isinstance(op, ast.IsNot):
+                bs.this.append(t.left)
+                bs.this.append(t.comparators[0])
                 @bs.this.append
                 def _(bs, op=op):
                     regs = [registers.rbx, registers.rcx, registers.rdx, registers.rdi, registers.rsi, registers.r9]
@@ -507,13 +511,48 @@ def translate(desc, flow, stack=None, this=None):
                         bs.code += isa.push(registers.rax)
                     bs.flow.stack.append(type_impl.Int)
             else:
+                if isinstance(op, ast.Lt): r = "lt"
+                elif isinstance(op, ast.LtE): r = "le"
+                elif isinstance(op, ast.Eq): r = "eq"
+                elif isinstance(op, ast.NotEq): r = "ne"
+                elif isinstance(op, ast.Gt): r = "gt"
+                elif isinstance(op, ast.GtE): r = "ge" 
+                else: assert False, op
+                
+                #bs.this.append(t.left)
+                #bs.this.append(t.right)
+                
+                #@bs.this.append
+                #def _(bs):
+                #    regs = list(good_regs)
+                #    right = pop(regs)
+                #    left = pop(regs)
+                #    push(left)
+                #    push(right)
+                
+                bs.this.append(
+                    ast.Call(
+                        func=ast.Attribute(
+                            value=t.left,
+                            attr='__%s__' % r,
+                            ctx=ast.Load(),
+                            ),
+                        args=[t.comparators[0]],
+                        keywords=[],
+                        starargs=None,
+                        kwargs=None,
+                        ),
+                    )
+                '''
                 @bs.this.append
                 def _(bs, t=t):
                     op = t.ops[0]
                     bs.code += isa.pop(registers.rax)
                     rax_type = bs.flow.stack.pop()
+                    assert rax_type is type_impl.Int
                     bs.code += isa.pop(registers.rbx)
                     rbx_type = bs.flow.stack.pop()
+                    assert rbx_type is type_impl.Int
                     bs.code += isa.cmp(registers.rbx, registers.rax)
                     bs.code += isa.mov(registers.rax, 0)
                     bs.code += isa.push(registers.rax)
@@ -531,8 +570,6 @@ def translate(desc, flow, stack=None, this=None):
                         bs.code += isa.jne(label)
                     elif isinstance(op, ast.NotEq):
                         bs.code += isa.je(label)
-                    elif isinstance(op, ast.Is): # XXX
-                        bs.code += isa.jne(label)
                     else:
                         assert False, op
                     bs.code += isa.pop(registers.rax)
@@ -541,6 +578,7 @@ def translate(desc, flow, stack=None, this=None):
                     bs.code += isa.push(registers.rax)
                     bs.flow.stack.append(type_impl.Int)
                     bs.code += label
+                '''
         elif isinstance(t, ast.Print):
             assert t.dest is None
             for value in t.values:
@@ -771,23 +809,61 @@ def translate(desc, flow, stack=None, this=None):
                 assert False, t.ctx
         elif isinstance(t, ast.Subscript):
             if isinstance(t.ctx, ast.Load):
-                assert isinstance(t.slice, ast.Index)
                 bs.this.append(t.value)
                 
-                bs.this.append(t.slice.value)
+                bs.this.append(t.slice)
                 
-                @bs.this.append
-                def _(bs, t=t):
-                    bs.this.append(bs.flow.stack[-2].getitem())
+                #   self, index
+                # swap
+                #   index, self
+                # getattr(-1, "__getitem__")
+                #   index, __getitem__ method
+                # swap
+                #   __getitem__ method, index
+                # call
+                #   result
+                
+                def _(bs):
+                    pass
+                
+                bs.this.append(util.swap)
+                
+                bs.this.append(ast.Attribute(value=_, attr='__getitem__', ctx=ast.Load()))
+                
+                bs.this.append(util.swap)
+                
+                bs.this.append(ast.Call(func=_, args=[_], keywords=[], starargs=None, kwargs=None))
             elif isinstance(t.ctx, ast.Store):
-                assert isinstance(t.slice, ast.Index)
                 bs.this.append(t.value)
                 
                 bs.this.append(t.slice.value)
                 
+                #   item, self, index
+                # swap
+                #   item, index, self
+                # getattr(-1, "__getitem__")
+                #   item, index, __getitem__ method
+                # rev3
+                #   __setitem__ method, index, item
+                # call
+                #   result
+                
+                bs.this.append(util.swap)
+                
+                def _(bs):
+                    pass
+                
+                bs.this.append(ast.Attribute(value=_, attr='__setitem__', ctx=ast.Load()))
+                
+                bs.this.append(util.rev3)
+                
+                bs.this.append(ast.Call(func=_, args=[_, _], keywords=[], starargs=None, kwargs=None))
+                
                 @bs.this.append
-                def _(bs, t=t):
-                    bs.this.append(bs.flow.stack[-2].setitem())
+                def _(bs):
+                    type = bs.flow.stack.pop()
+                    for i in xrange(type.size):
+                        bs.code += isa.pop(registers.rax)
             else:
                 assert False, t.ctx
         elif isinstance(t, ast.Continue):
@@ -949,18 +1025,9 @@ def translate(desc, flow, stack=None, this=None):
             for target in t.targets:
                 assert isinstance(target.ctx, ast.Del)
                 bs.this.append(target)
+        elif isinstance(t, ast.Index):
+            bs.this.append(t.value)
+            #assert Fal
         else:
-            assert False, t
+            assert False, util.dump(t)
         bs.call_stack.extend(reversed(bs.this))
-
-type_impl.functions.append(Function(ast.FunctionDef(
-    name="null_func",
-    args=ast.arguments(
-        args=[],
-        vararg=None,
-        kwarg=None,
-        defaults=[],
-    ),
-    body=[],
-    decorator_list=[],
-)))

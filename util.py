@@ -295,6 +295,7 @@ malloc_addr = ctypes.cast(ctypes.CDLL("libc.so.6").malloc, ctypes.c_void_p).valu
 free_addr = ctypes.cast(ctypes.CDLL("libc.so.6").free, ctypes.c_void_p).value
 realloc_addr = ctypes.cast(ctypes.CDLL("libc.so.6").realloc, ctypes.c_void_p).value
 sprintf_addr = ctypes.cast(ctypes.CDLL("libc.so.6").sprintf, ctypes.c_void_p).value
+memcmp_addr = ctypes.cast(ctypes.CDLL("libc.so.6").memcmp, ctypes.c_void_p).value
 
 def dump(node, annotate_fields=True, include_attributes=False):
     """
@@ -386,6 +387,15 @@ def swap(bs):
     b = pop(bs, regs)
     push(bs, a)
     push(bs, b)
+
+def rev3(bs):
+    regs = list(good_regs)
+    a = pop(bs, regs)
+    b = pop(bs, regs)
+    c = pop(bs, regs)
+    push(bs, a)
+    push(bs, b)
+    push(bs, c)
 
 if __name__ == "__main__":
     print repr(get_jmp(0))
