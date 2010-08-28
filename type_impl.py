@@ -147,6 +147,12 @@ class IntStrMeth(_Type):
             
             bs.code += isa.mov(registers.r12, registers.rbp)
             bs.code += isa.sub(registers.r12, registers.rsp)
+            
+            
+            # add small string test/create here
+            
+            
+            
             bs.code += isa.push(registers.r12)
             bs.code += isa.add(registers.r12, 8)
             
@@ -453,6 +459,11 @@ class FloatStrMeth(_Type):
             bs.code += skip
             
             bs.code += isa.mov(MemRef(registers.rbp, -32 - 8), registers.r12)
+            
+            
+            # add small string test/alloc here
+            
+            
             bs.code += isa.add(registers.r12, 8)
             
             bs.code += isa.mov(registers.rdi, registers.r12)
