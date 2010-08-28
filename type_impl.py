@@ -1091,8 +1091,11 @@ class StrGetitemMeth(_Type):
             
             bs.code += isa.add(registers.r12, 8)
             bs.code += isa.add(registers.r12, registers.r13)
-            bs.code += isa.mov(registers.rax, 1)
-            bs.code += isa.mov(registers.ah, MemRef(registers.r12, data_size=8))
+            
+            bs.code += isa.mov(registers.rax, 3)
+            bs.code += isa.mov(registers.al, MemRef(registers.r12, data_size=8))
+            bs.code += isa.shl(registers.rax, 8)
+            bs.code += isa.mov(registers.al, 3)
             
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Str)
@@ -1107,10 +1110,18 @@ class StrOrdMeth(_Type):
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.rax)
             
+            skip = bs.program.get_unique_label()
+            bs.code += isa.test(registers.rax, 1)
+            bs.code += isa.jz(skip)
+            bs.code += isa.mov(registers.rax, registers.rsp)
+            bs.code += isa.sub(registers.rax, 7 + 8)
+            bs.code += skip
+            
             bs.code += isa.add(registers.rax, 8)
+            
             bs.code += isa.mov(registers.r12, 0)
             bs.code += isa.mov(registers.r12b, MemRef(registers.rax, data_size=8))
-            
+
             bs.code += isa.push(registers.r12)
             bs.flow.stack.append(Int)
         return _
@@ -1201,6 +1212,34 @@ class _StrCmpMeth(_Type):
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.rsi)
             
+            skip = bs.program.get_unique_label()
+            bs.code += isa.test(registers.rsi, 1)
+            bs.code += isa.jz(skip)
+            bs.code += isa.mov(registers.rax, registers.rsi)
+            bs.code += isa.shr(registers.rax, 1)
+            bs.code += isa.and_(registers.rax, 7)
+            bs.code += isa.mov(MemRef(registers.rsp, -16), registers.rax)
+            bs.code += isa.mov(registers.rax, registers.rsi)
+            bs.code += isa.shr(registers.rax, 8)
+            bs.code += isa.mov(MemRef(registers.rsp, -8), registers.rax)
+            bs.code += isa.mov(registers.rsi, registers.rsp)
+            bs.code += isa.sub(registers.rsi, 16)
+            bs.code += skip
+            
+            skip = bs.program.get_unique_label()
+            bs.code += isa.test(registers.rdi, 1)
+            bs.code += isa.jz(skip)
+            bs.code += isa.mov(registers.rax, registers.rdi)
+            bs.code += isa.shr(registers.rax, 1)
+            bs.code += isa.and_(registers.rax, 7)
+            bs.code += isa.mov(MemRef(registers.rsp, -32), registers.rax)
+            bs.code += isa.mov(registers.rax, registers.rdi)
+            bs.code += isa.shr(registers.rax, 8)
+            bs.code += isa.mov(MemRef(registers.rsp, -24), registers.rax)
+            bs.code += isa.mov(registers.rdi, registers.rsp)
+            bs.code += isa.sub(registers.rdi, 32)
+            bs.code += skip
+            
             end = bs.program.get_unique_label()
             
             bs.code += isa.mov(registers.rcx, MemRef(registers.rsi))
@@ -1256,9 +1295,15 @@ class Str(_Type):
             bs.flow.stack.append(Str)
         return _
     def to_python(self, data):
-        i, = struct.unpack("q", data)
-        length, = struct.unpack("l", ctypes.string_at(i, 8))
-        return ctypes.string_at(i+8, length)
+        i, = struct.unpack("l", data)
+        if i & 1:
+            first, data = struct.unpack("B7s", struct.pack("l", i))
+            assert first & 1
+            length = first >> 1
+            return data[:length]
+        else:
+            length, = struct.unpack("l", ctypes.string_at(i, 8))
+            return ctypes.string_at(i+8, length)
     
     def getattr___str__(self, bs): bs.flow.stack.append(StrStrMeth)
     def getattr___getitem__(self, bs): bs.flow.stack.append(StrGetitemMeth)

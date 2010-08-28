@@ -280,6 +280,8 @@ print_double_addr = ctypes.cast(print_double_cfunc, ctypes.c_void_p).value
 
 @called_from_asm
 def print_string(i):
+    #print i
+    #return 
     if i & 1:
         first, data = struct.unpack("B7s", struct.pack("l", i))
         assert first & 1
