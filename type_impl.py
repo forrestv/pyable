@@ -1248,7 +1248,10 @@ class Str(_Type):
     def load_constant(self, s):
         assert isinstance(s, str)
         def _(bs):
-            bs.code += isa.mov(registers.rax, ctypes.cast(strings[s], ctypes.c_void_p).value)
+            if len(s) >= 8:
+                bs.code += isa.mov(registers.rax, ctypes.cast(strings[s], ctypes.c_void_p).value)
+            else:
+                bs.code += isa.mov(registers.rax, struct.unpack("l", struct.pack("B7s", 2 * len(s) + 1, s))[0])
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Str)
         return _

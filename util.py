@@ -280,8 +280,14 @@ print_double_addr = ctypes.cast(print_double_cfunc, ctypes.c_void_p).value
 
 @called_from_asm
 def print_string(i):
-    length, = struct.unpack("l", ctypes.string_at(i, 8))
-    print ctypes.string_at(i+8, length),
+    if i & 1:
+        first, data = struct.unpack("B7s", struct.pack("l", i))
+        assert first & 1
+        length = first >> 1
+        print data[:length],
+    else:
+        length, = struct.unpack("l", ctypes.string_at(i, 8))
+        print ctypes.string_at(i+8, length),
 print_string_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64)(print_string)
 print_string_addr = ctypes.cast(print_string_cfunc, ctypes.c_void_p).value
 
