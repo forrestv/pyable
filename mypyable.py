@@ -247,28 +247,19 @@ class SetListImpl(_PythonFunction):
         return type_impl.NoneType
 
 @apply
+class SetListImpl(_PythonFunction):
+    def handler(self, new):
+        global list_impl
+        assert list_impl is None, "list_impl can only be set once"
+        list_impl = new
+        return type_impl.NoneType
+
+@apply
 class PyableModule(type_impl._Type):
     size = 0
-    def const_getattr(self, s):
-        if s == "type":
-            def _(bs):
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(Type)
-            return _
-        elif s == "type_number":
-            def _(bs):
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(Type_Number)
-            return _
-        elif s == "raw":
-            def _(bs):
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(RawType)
-            return _
-        elif s == "set_list_impl":
-            def _(bs):
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(SetListImpl)
-            return _
-        else:
-            assert False, s
+    def getattr_type(self, bs): bs.flow.stack.append(Type)
+    def getattr_type_number(self, bs): bs.flow.stack.append(TypeNumber)
+    def getattr_raw(self, bs): bs.flow.stack.append(RawType)
+    def getattr_set_list_impl(self, bs): bs.flow.stack.append(SetListImpl)
+    def getattr_args(self, bs): bs.flow.stack.append(ArgGetter)
+    #def getattr_args(self, bs): type_impl.ProtoTuple.load(

@@ -3,6 +3,7 @@ from __future__ import division
 import struct
 import ctypes
 import ast
+import random
 
 import corepy.arch.x86_64.isa as isa
 import corepy.arch.x86_64.types.registers as registers
@@ -185,12 +186,12 @@ class IntAddMeth(_Type):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
             if other_type is not Int and other_type is not Bool:
                 for i in xrange(other_type.size):
                     bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
-            assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.rbx)
             bs.code += isa.pop(registers.rax)
             bs.code += isa.add(registers.rax, registers.rbx)
@@ -205,12 +206,12 @@ class IntSubMeth(_Type):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
             if other_type is not Int and other_type is not Bool:
                 for i in xrange(other_type.size):
                     bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
-            assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.rbx)
             bs.code += isa.pop(registers.rax)
             bs.code += isa.sub(registers.rax, registers.rbx)
@@ -225,12 +226,12 @@ class IntMulMeth(_Type):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
             if other_type is not Int and other_type is not Bool:
                 for i in xrange(other_type.size):
                     bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
-            assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.rbx)
             bs.code += isa.pop(registers.rax)
             bs.code += isa.imul(registers.rax, registers.rbx)
@@ -245,16 +246,15 @@ class IntModMeth(_Type):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
             if other_type is not Int and other_type is not Bool:
                 for i in xrange(other_type.size):
                     bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
-            assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.rbx)
             bs.code += isa.pop(registers.rax)
             bs.code += isa.mov(registers.rdx, 0)
-            bs.code += isa.mov(registers.rax, registers.rax)
             bs.code += isa.idiv(registers.rbx)
             bs.code += isa.push(registers.rdx)
             bs.flow.stack.append(Int)
@@ -304,12 +304,12 @@ class IntFloorDivMeth(_Type):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
             if other_type is not Int and other_type is not Bool:
                 for i in xrange(other_type.size):
                     bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
-            assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.rbx)
             bs.code += isa.pop(registers.rax)
             bs.code += isa.mov(registers.rdx, 0)
@@ -485,6 +485,158 @@ class FloatStrMeth(_Type):
         return _
 
 @apply
+class FloatAddMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert arg_types in [(Int,), (Float,)]
+        def _(bs):
+            other = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
+            if isinstance(other, type(Float)):
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp, 8))
+                bs.code += isa.movsd(registers.xmm1, MemRef(registers.rsp))
+                bs.code += isa.pop(registers.rax)
+            elif isinstance(other, type(Int)):
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.cvtsi2sd(registers.xmm1, registers.rbx)
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
+            else:
+                assert False, other
+            bs.code += isa.addsd(registers.xmm0, registers.xmm1)
+            bs.code += isa.movsd(MemRef(registers.rsp), registers.xmm0)
+            bs.flow.stack.append(Float)
+        return _
+
+@apply
+class FloatNegMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.mov(registers.rbx, -9223372036854775808)
+            bs.code += isa.xor(registers.rax, registers.rbx)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Float)
+        return _
+
+@apply
+class FloatSubMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert arg_types in [(Int,), (Float,)]
+        def _(bs):
+            other = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
+            if isinstance(other, type(Float)):
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp, 8))
+                bs.code += isa.movsd(registers.xmm1, MemRef(registers.rsp))
+                bs.code += isa.pop(registers.rax)
+            elif isinstance(other, type(Int)):
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.cvtsi2sd(registers.xmm1, registers.rbx)
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
+            else:
+                assert False, other
+            bs.code += isa.subsd(registers.xmm0, registers.xmm1)
+            bs.code += isa.movsd(MemRef(registers.rsp), registers.xmm0)
+            bs.flow.stack.append(Float)
+        return _
+
+@apply
+class FloatRSubMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert arg_types in [(Int,), (Float,)]
+        def _(bs):
+            other = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
+            if isinstance(other, type(Float)):
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp, 8))
+                bs.code += isa.movsd(registers.xmm1, MemRef(registers.rsp))
+                bs.code += isa.pop(registers.rax)
+            elif isinstance(other, type(Int)):
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.cvtsi2sd(registers.xmm1, registers.rbx)
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
+            else:
+                assert False, other
+            bs.code += isa.subsd(registers.xmm1, registers.xmm0)
+            bs.code += isa.movsd(MemRef(registers.rsp), registers.xmm1)
+            bs.flow.stack.append(Float)
+        return _
+
+@apply
+class FloatMulMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert arg_types in [(Int,), (Float,)]
+        def _(bs):
+            other = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
+            if isinstance(other, type(Float)):
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp, 8))
+                bs.code += isa.movsd(registers.xmm1, MemRef(registers.rsp))
+                bs.code += isa.pop(registers.rax)
+            elif isinstance(other, type(Int)):
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.cvtsi2sd(registers.xmm1, registers.rbx)
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
+            else:
+                assert False, other
+            bs.code += isa.mulsd(registers.xmm0, registers.xmm1)
+            bs.code += isa.movsd(MemRef(registers.rsp), registers.xmm0)
+            bs.flow.stack.append(Float)
+        return _
+
+@apply
+class FloatDivMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert arg_types in [(Int,), (Float,)]
+        def _(bs):
+            other = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
+            if isinstance(other, type(Float)):
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp, 8))
+                bs.code += isa.movsd(registers.xmm1, MemRef(registers.rsp))
+                bs.code += isa.pop(registers.rax)
+            elif isinstance(other, type(Int)):
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.cvtsi2sd(registers.xmm1, registers.rbx)
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
+            else:
+                assert False, other
+            bs.code += isa.divsd(registers.xmm0, registers.xmm1)
+            bs.code += isa.movsd(MemRef(registers.rsp), registers.xmm0)
+            bs.flow.stack.append(Float)
+        return _
+
+@apply
+class FloatRDivMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert arg_types in [(Int,), (Float,)]
+        def _(bs):
+            other = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
+            if isinstance(other, type(Float)):
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp, 8))
+                bs.code += isa.movsd(registers.xmm1, MemRef(registers.rsp))
+                bs.code += isa.pop(registers.rax)
+            elif isinstance(other, type(Int)):
+                bs.code += isa.pop(registers.rbx)
+                bs.code += isa.cvtsi2sd(registers.xmm1, registers.rbx)
+                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
+            else:
+                assert False, other
+            bs.code += isa.divsd(registers.xmm1, registers.xmm0)
+            bs.code += isa.movsd(MemRef(registers.rsp), registers.xmm1)
+            bs.flow.stack.append(Float)
+        return _
+
+@apply
 class Float(_Type):
     size = 1
     def load_constant(self, value):
@@ -495,48 +647,20 @@ class Float(_Type):
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
         return _
-    def const_getattr(self, s):
-        def _(bs):
-            assert bs.flow.stack[-1] is self
-            if s == "__str__":
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(FloatStrMeth)
-            else:
-                assert False, s
-        return _
-    def __neg__(self):
-        def _(bs):
-            bs.code += isa.neg(registers.rax)
-        return _
-    def __add__(self, other, reverse=False):
-        if isinstance(other, type(Float)):
-            def _(bs):
-                bs.code += isa.pop(registers.rbx)
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.push(registers.rax)
-                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
-                bs.code += isa.mov(MemRef(registers.rsp), registers.rbx)
-                bs.code += isa.movsd(registers.xmm1, MemRef(registers.rsp))
-                bs.code += isa.addsd(registers.xmm0, registers.xmm1)
-                bs.code += isa.movsd(MemRef(registers.rsp), registers.xmm0)
-                bs.flow.stack.append(Float)
-            return _
-        elif isinstance(other, type(Int)):
-            def _(bs):
-                if not reverse:
-                    bs.code += isa.pop(registers.rbx)
-                bs.code += isa.pop(registers.rax)
-                if reverse:
-                    bs.code += isa.pop(registers.rbx)
-                bs.code += isa.cvtsi2sd(registers.xmm1, registers.rbx)
-                bs.code += isa.push(registers.rax)
-                bs.code += isa.movsd(registers.xmm0, MemRef(registers.rsp))
-                bs.code += isa.addsd(registers.xmm0, registers.xmm1)
-                bs.code += isa.movsd(MemRef(registers.rsp), registers.xmm0)
-                bs.flow.stack.append(Float)
-            return _
-        return NotImplemented
-    __radd__ = lambda self, other: self.__add__(other, reverse=True)
+    def getattr___str__(self, bs): bs.flow.stack.append(FloatStrMeth)
+    def getattr___neg__(self, bs): bs.flow.stack.append(FloatNegMeth)
+    
+    def getattr___add__(self, bs): bs.flow.stack.append(FloatAddMeth)
+    def getattr___radd__(self, bs): bs.flow.stack.append(FloatAddMeth)
+    
+    def getattr___sub__(self, bs): bs.flow.stack.append(FloatSubMeth)
+    def getattr___rsub__(self, bs): bs.flow.stack.append(FloatRSubMeth)
+    
+    def getattr___mul__(self, bs): bs.flow.stack.append(FloatMulMeth)
+    def getattr___rmul__(self, bs): bs.flow.stack.append(FloatMulMeth)
+    
+    def getattr___div__(self, bs): bs.flow.stack.append(FloatDivMeth)
+    def getattr___rdiv__(self, bs): bs.flow.stack.append(FloatRDivMeth)
 
 class _TupleGetitemMeth(_Type):
     size = 1
@@ -688,6 +812,8 @@ class ProtoObject(_Type):
             bs.code += isa.mov(registers.rsp, registers.r12)
         return _
 
+name_bits = util.cdict(lambda name: 1 << random.randrange(64))
+
 @apply
 class Scope(object):
     slots = []
@@ -710,13 +836,16 @@ class Scope(object):
             bs.code += isa.call(registers.rax)
             bs.code += isa.mov(registers.r15, registers.rax) # r15 = pointer to new slots data
             
+            bits = 0
+            
             for attr_, (type_, pos_) in new_slots.iteritems():
                 old_pos_ = bs.flow.get_var_loc(attr_)
                 for i in xrange(type_.size):
                     bs.code += isa.mov(registers.rax, MemRef(registers.rbp, loc + i * 8))
                     bs.code += isa.mov(MemRef(registers.r15, 8 * (pos_ + i)), registers.rax)
+                bits |= name_bits[attr_]
             
-            bs.code += isa.mov(registers.rdi, 8 * 3)
+            bs.code += isa.mov(registers.rdi, 8 * 4)
             bs.code += isa.mov(registers.rax, util.malloc_addr)
             bs.code += isa.call(registers.rax)
             
@@ -724,6 +853,8 @@ class Scope(object):
             bs.code += isa.mov(MemRef(registers.rax, 8), registers.r15)
             bs.code += isa.mov(registers.rbx, MemRef(registers.rbp, -8)) # get parent
             bs.code += isa.mov(MemRef(registers.rax, 16), registers.rbx) # parent
+            bs.code += isa.mov(registers.rbx, bits)
+            bs.code += isa.mov(MemRef(registers.rax, 24), registers.rbx) # parent
             
             bs.code += isa.mov(MemRef(registers.rbp, -8), registers.rax)
         return _
@@ -775,6 +906,8 @@ class Scope(object):
                         # change reference and id on object
                         bs.code += isa.mov(MemRef(registers.r12), new_id)
                         bs.code += isa.mov(MemRef(registers.r12, 8), registers.r15)
+                        # can't do this, but maybe there is some way
+                        # bs.code += isa.and_(MemRef(registers.r12, 24), ~name_bits[attr])
                         
                         slots = new_slots
                 return _
@@ -828,6 +961,8 @@ class Scope(object):
                         # change reference and id on object
                         bs.code += isa.mov(MemRef(registers.r12), new_id)
                         bs.code += isa.mov(MemRef(registers.r12, 8), registers.r15)
+                        bs.code += isa.mov(registers.rax, name_bits[attr])
+                        bs.code += isa.or_(MemRef(registers.r12, 24), registers.rax)
                         
                         slots = new_slots
                     
@@ -838,15 +973,24 @@ class Scope(object):
             util.unlift(bs, store_in, "Scope.set_name")
         return _
     def get_name(self, attr):
+        bits = name_bits[attr]
         def _(bs):
             bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
+            loop = bs.program.get_unique_label()
+            bs.code += loop
             bs.code += isa.cmp(registers.r12, 0)
-            bs.code += isa.push(-1)
+            bs.code += isa.mov(registers.rax, -1)
             skip = bs.program.get_unique_label()
             bs.code += isa.je(skip)
-            bs.code += isa.pop(registers.rax)
-            bs.code += isa.push(MemRef(registers.r12)) # slot id
+            bs.code += isa.mov(registers.rax, name_bits[attr])
+            bs.code += isa.test(MemRef(registers.r12, 24), registers.rax)
+            bs.code += isa.mov(registers.rax, MemRef(registers.r12)) # slot id
+            bs.code += isa.jnz(skip)
+            bs.code += isa.mov(registers.r12, MemRef(registers.r12, 16))
+            bs.code += isa.jmp(loop)
             bs.code += skip
+            bs.code += isa.push(registers.rax) # slot id
+            
             
             def load_in(slot_id):
                 if slot_id == -1: assert False, attr + " not found"
@@ -951,6 +1095,7 @@ class ProtoInstance(_Type):
                 bs.flow.stack.append(self)
         return _
     def setattr_const_string(self, attr):
+        assert attr != '__class__'
         def _(bs):
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.r12)
@@ -1416,16 +1561,18 @@ class NoneType(_Type):
     size = 0
     def load(self):
         def _(bs):
-            bs.flow.stack.append(NoneType)
+            bs.flow.stack.append(self)
         return _
     def to_python(self, data):
         assert not data
-    def const_getattr(self, s):
+    def getattr___str__(self, bs): bs.flow.stack.append(NoneStrMeth)
+
+@apply
+class NotImplementedType(_Type):
+    size = 0
+    def load(self):
         def _(bs):
-            assert bs.flow.stack[-1] is self
-            if s == "__str__":
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(NoneStrMeth)
-            else:
-                assert False, s
+            bs.flow.stack.append(self)
         return _
+    def to_python(self, data):
+        assert not data

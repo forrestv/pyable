@@ -168,7 +168,7 @@ class BlockStatus(object):
         self.code = self.program.get_stream()
     
     def finalise(self):
-        while True:
+        while False:
             old = self.code
             res = self.program.get_stream()
             for i in xrange(len(old)):
@@ -246,6 +246,10 @@ def translate(desc, flow, stack=None, this=None):
     while True:
         t = bs.call_stack.pop()
         bs.this = []
+        if util.DEBUG:
+            print
+            print bs.call_stack
+            print util.dump(t)
         
         if t is None:
             p = bs.finalise()
@@ -418,7 +422,7 @@ def translate(desc, flow, stack=None, this=None):
             
             bs.this.append(t.test)
             @bs.this.append
-            def _(bs, t=t):
+            def _(bs, t=t, make_orelse=make_orelse, make_body=make_body):
                 type = bs.flow.stack.pop()
                 assert type is type_impl.Int or type is type_impl.Bool, type
                 bs.code += isa.pop(registers.rax)
@@ -469,13 +473,12 @@ def translate(desc, flow, stack=None, this=None):
                 ])
             
             bs.flow.ctrl_stack.append([
-                lambda bs, flow=bs.flow, make_a=make_a: util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_a(flow))), # continue
-                lambda bs, flow=bs.flow, make_c=make_c: util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c(flow))), # break
+                lambda bs, flow=bs.flow, make_a=make_a: (util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_a(flow))), bs.this.append(None)), # continue
+                lambda bs, flow=bs.flow, make_c=make_c: (util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c(flow))), bs.this.append(None)), # break
                 number, # used for sanity check while avoiding circular reference
             ])
             
             bs.this.append(bs.flow.ctrl_stack[-1][0]) # continue
-            bs.this.append(None)
         elif isinstance(t, ast.Compare):
             assert len(t.ops) == 1 and len(t.comparators) == 1
             op = t.ops[0]
@@ -596,7 +599,7 @@ def translate(desc, flow, stack=None, this=None):
                         ),
                     )
                 @bs.this.append
-                def _(bs, value=value):
+                def _(bs):
                     type = bs.flow.stack.pop()
                     
                     assert type is type_impl.Str
@@ -698,24 +701,27 @@ def translate(desc, flow, stack=None, this=None):
                     ),
                 )
             
-            #@bs.this.append
-            #def _(bs):
-            #    result_type = bs.flow.stack[-1]
-            #    if result_type is type_impl.NotImplementedType:
-            #        bs.flow.stack.pop()
-            #        bs.this.append(
-            #            ast.Call(
-            #                func=ast.Attribute(
-            #                    value=t.left,
-            #                    attr='__%s__' % r,
-            #                    ctx=ast.Load(),
-            #                    ),
-            #                args=[t.right],
-            #                keywords=[],
-            #                starargs=None,
-            #                kwargs=None,
-            #                ),
-            #            )
+            @bs.this.append
+            def _(bs, t=t, r=r):
+                if util.DEBUG:
+                    print "XXX", bs, t, r
+                # XXX should cache left/right
+                result_type = bs.flow.stack[-1]
+                if result_type is type_impl.NotImplementedType:
+                    bs.flow.stack.pop()
+                    bs.this.append(
+                        ast.Call(
+                            func=ast.Attribute(
+                                value=t.right,
+                                attr='__r%s__' % r,
+                                ctx=ast.Load(),
+                                ),
+                            args=[t.left],
+                            keywords=[],
+                            starargs=None,
+                            kwargs=None,
+                            ),
+                        )
         elif isinstance(t, ast.BoolOp):
             @util.memoize
             def make_post(flow, stack=list(bs.call_stack)):
@@ -996,7 +1002,7 @@ def translate(desc, flow, stack=None, this=None):
             else:
                 assert False
         elif isinstance(t, ast.ClassDef):
-            assert not t.bases
+            #assert not t.bases
             assert not t.decorator_list
             
             import mypyable
@@ -1028,6 +1034,8 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.Index):
             bs.this.append(t.value)
             #assert Fal
+        elif isinstance(t, ast.Exec):
+            a
         else:
             assert False, util.dump(t)
         bs.call_stack.extend(reversed(bs.this))
