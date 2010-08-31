@@ -190,6 +190,7 @@ class IntAddMeth(_Type):
             if other_type is not Int and other_type is not Bool:
                 for i in xrange(other_type.size):
                     bs.code += isa.pop(registers.rax)
+                bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
             bs.code += isa.pop(registers.rbx)
@@ -210,6 +211,7 @@ class IntSubMeth(_Type):
             if other_type is not Int and other_type is not Bool:
                 for i in xrange(other_type.size):
                     bs.code += isa.pop(registers.rax)
+                bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
             bs.code += isa.pop(registers.rbx)
@@ -230,6 +232,7 @@ class IntMulMeth(_Type):
             if other_type is not Int and other_type is not Bool:
                 for i in xrange(other_type.size):
                     bs.code += isa.pop(registers.rax)
+                bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
             bs.code += isa.pop(registers.rbx)
@@ -250,6 +253,7 @@ class IntModMeth(_Type):
             if other_type is not Int and other_type is not Bool:
                 for i in xrange(other_type.size):
                     bs.code += isa.pop(registers.rax)
+                bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
             bs.code += isa.pop(registers.rbx)
@@ -308,6 +312,7 @@ class IntFloorDivMeth(_Type):
             if other_type is not Int and other_type is not Bool:
                 for i in xrange(other_type.size):
                     bs.code += isa.pop(registers.rax)
+                bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
             bs.code += isa.pop(registers.rbx)
@@ -316,6 +321,37 @@ class IntFloorDivMeth(_Type):
             bs.code += isa.mov(registers.rax, registers.rax)
             bs.code += isa.idiv(registers.rbx)
             bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Int)
+        return _
+
+@apply
+class IntPowMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 1
+        def _(bs):
+            other_type = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
+            if other_type is not Int and other_type is not Bool:
+                for i in xrange(other_type.size):
+                    bs.code += isa.pop(registers.rax)
+                bs.code += isa.pop(registers.rax)
+                bs.flow.stack.append(NotImplementedType)
+                return
+            loop = bs.program.get_unique_label()
+            end = bs.program.get_unique_label()
+            
+            bs.code += isa.pop(registers.rbx) # exponent
+            bs.code += isa.pop(registers.rax) # base
+            bs.code += isa.mov(registers.rdx, 1)
+            bs.code += isa.sub(registers.rbx, 0)
+            bs.code += loop
+            bs.code += isa.jz(end)
+            bs.code += isa.imul(registers.rdx, registers.rax)
+            bs.code += isa.sub(registers.rbx, 1)
+            bs.code += isa.jmp(loop)
+            bs.code += end
+            bs.code += isa.push(registers.rdx)
             bs.flow.stack.append(Int)
         return _
 
@@ -358,6 +394,8 @@ class Int(_Type):
         bs.flow.stack.append(IntFloorDivMeth)
     def getattr___mod__(self, bs):
         bs.flow.stack.append(IntModMeth)
+    def getattr___pow__(self, bs):
+        bs.flow.stack.append(IntPowMeth)
     def getattr___gt__(self, bs): bs.flow.stack.append(IntCmpMeths['gt'])
     def getattr___lt__(self, bs): bs.flow.stack.append(IntCmpMeths['lt'])
     def getattr___ge__(self, bs): bs.flow.stack.append(IntCmpMeths['ge'])
@@ -373,6 +411,9 @@ class Int(_Type):
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
         return _
+    def to_python(self, data):
+        i, = struct.unpack("l", data)
+        return i
 _Int = Int.__class__
 
 @apply
@@ -739,6 +780,8 @@ class ProtoTuple(_Type):
                     bs.code += isa.push(MemRef(registers.rax, pos))
                     pos += 8
         return _
+
+prototuples = util.cdict(ProtoTuple)
 
 class Tuple2(_Type):
     size = 1
@@ -1443,7 +1486,7 @@ class Str(_Type):
     def load_constant(self, s):
         assert isinstance(s, str)
         def _(bs):
-            if len(s) >= 8:
+            if len(s) >= 8 or 1:
                 bs.code += isa.mov(registers.rax, ctypes.cast(strings[s], ctypes.c_void_p).value)
             else:
                 bs.code += isa.mov(registers.rax, struct.unpack("l", struct.pack("B7s", 2 * len(s) + 1, s))[0])
@@ -1492,6 +1535,7 @@ class Function(_Type):
             
             def _(value):
                 def _(bs):
+                    print value, "XXX"
                     if isinstance(functions[value], str):
                         assert False, functions[value]
                     bs.this.append(functions[value](arg_types))

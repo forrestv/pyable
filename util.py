@@ -280,16 +280,8 @@ print_double_addr = ctypes.cast(print_double_cfunc, ctypes.c_void_p).value
 
 @called_from_asm
 def print_string(i):
-    #print i
-    #return 
-    if i & 1:
-        first, data = struct.unpack("B7s", struct.pack("l", i))
-        assert first & 1
-        length = first >> 1
-        print data[:length],
-    else:
-        length, = struct.unpack("l", ctypes.string_at(i, 8))
-        print ctypes.string_at(i+8, length),
+    import type_impl
+    print type_impl.Str.to_python(struct.pack("l", i)),
 print_string_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64)(print_string)
 print_string_addr = ctypes.cast(print_string_cfunc, ctypes.c_void_p).value
 
@@ -362,6 +354,20 @@ def unlift(bs, func, desc):
             None,
         ])
     bs.code += isa.mov(registers.rdi, MemRef(registers.rsp))
+    add_redirection(bs.code, lambda rdi, flow=bs.flow.clone(): get_jmp(make_thingy(flow, rdi)))
+    bs.this.append(None)
+
+def unlift_noncached(bs, func, desc):
+    @memoize
+    def make_post(flow):
+        return compiler.translate("unlift_post", flow, stack=list(bs.call_stack))
+    def make_thingy(flow, data):
+        return compiler.translate("unlift_thingy", flow, this=[
+            func(data),
+            lambda bs: add_redirection(bs.code, lambda rdi, flow=bs.flow.clone(): get_jmp(make_post(flow))),
+            None,
+        ])
+    bs.code += isa.pop(registers.rdi)
     add_redirection(bs.code, lambda rdi, flow=bs.flow.clone(): get_jmp(make_thingy(flow, rdi)))
     bs.this.append(None)
 

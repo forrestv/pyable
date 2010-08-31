@@ -81,9 +81,12 @@ def execfile(filename, globals=None, locals=None):
     pass
 
 class file(object):
-    def __init__(self, name, mode='r', bufzise=None):
+    def __init__(self, name, mode='r', bufsize=None):
+        print "a"
         self._file = libc.fopen(name, mode)
+        print "b"
     def read(self, size=None):
+        print "AHH", size
         if size is None:
             l = []
             while True:
@@ -91,8 +94,11 @@ class file(object):
                 if len(l[-1]) < 2**16:
                     break
             return ''.join(l)
+        print "c"
         res = ctypes.create_string_buffer(size)
+        print "d"
         actual = libc.fread(res, 1, size, self._file)
+        print "b"
         return res.raw[:actual]
 
 def filter(function, iterable):
@@ -195,10 +201,113 @@ class module(object):
 def __import__(name):
     aa
 
+print 1
+
+import _pyable
+
+
+list = _pyable.type("list", None, None)
+
+def list___init__(self, iterable=None):
+    self._used = 0
+    self._allocated = 0
+    if iterable is not None:
+        for item in iterable:
+            self.append(item)
+list.__init__ = list___init__
+
+def list___len__(self):
+    return self._used
+list.__len__ = list___len__
+
+def list__grow(self):
+    new_allocated = self._allocated * 2 + 1
+    import _pyable
+    new_store = _pyable.raw(4 * new_allocated)
+    if self._used:
+        new_store.copy_from(self._store, 4 * self._used)
+    self._allocated = new_allocated
+    self._store = new_store
+list._grow = list__grow
+
+def list_append(self, item):
+    if self._used + 1 > self._allocated:
+         self._grow()
+    self._store.store_object(4 * self._used, item)
+    self._used += 1
+    return self
+list.append = list_append
+
+def list___getitem__(self, index):
+    if index < 0:
+        index += self._used
+    if index >= self._used:
+        return None
+    return self._store.load_object(4 * index)
+list.__getitem__ = list___getitem__
+
+def list___setitem__(self, index, item):
+    if index < 0:
+        index += self._used
+    if index >= self._used:
+        return None
+    self._store.store_object(4 * index, item)
+list.__setitem__ = list___setitem__
+
+def list_pop(self, index=-1):
+    if index < 0:
+        index += self._used
+    if index < 0 or index >= self._used:
+        return None
+    res = self._store.load_object(4 * index)
+    i = 4 * index
+    while i + 4 < 4 * self._used:
+        self._store[i] = self._store[i + 4]
+        t += 1
+    self._used -= 1
+    return res
+list.pop = list_pop
+
+def list___mul__(self, other):
+    new = self.__class__()
+    i = 0
+    while i < other:
+        j = 0
+        while j < self._used:
+            new.append(self[j])
+            j += 1
+        i += 1
+    return new
+list.__mul__ = list___mul__
+
+def len(o):
+    return o.__len__()
+
+_pyable.set_list_impl(list)
+
+
+
+print 2
+
 def eval(s):
     return _pyable.eval(s)
 
-exec open(_pyable.argv[0]).read()
+print 3
+
+a = _pyable.args[0]
+
+print 3.5, a
+
+x = open(a)
+print 3.7
+
+y = x.read()
+
+print 4, x
+
+exec x
+
+print 5
 
 if 0:
     import random

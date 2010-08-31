@@ -22,7 +22,7 @@ class _FuncPtr(type_impl._Type):
         self.func = cdll[name]
     def __call__(self, arg_types):
         def _(bs):
-            ints = len([x for x in arg_types if x is type_impl.Int])
+            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str])
             floats = len([x for x in arg_types if x is type_impl.Float])
             for arg_type in arg_types:
                 type = bs.flow.stack.pop()
@@ -33,6 +33,10 @@ class _FuncPtr(type_impl._Type):
                     floats -= 1
                     bs.code += isa.movsd(float_regs[floats], MemRef(registers.rsp))
                     bs.code += isa.pop(registers.rax)
+                elif type is type_impl.Str:
+                    ints -= 1
+                    bs.code += isa.pop(int_regs[ints])
+                    bs.code += isa.add(int_regs[ints], 8)
                 else:
                     assert False, type
             assert bs.flow.stack.pop() is self
@@ -71,9 +75,4 @@ class CDLL(type_impl._Type):
 @apply
 class CtypesModule(type_impl._Type):
     size = 0
-    def const_getattr(self, s):
-        if s == "CDLL":
-            def _(bs):
-                assert bs.flow.stack.pop() is self
-                bs.flow.stack.append(CDLL)
-            return _
+    def getattr_CDLL(self, bs): bs.flow.stack.append(CDLL)

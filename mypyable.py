@@ -255,11 +255,20 @@ class SetListImpl(_PythonFunction):
         return type_impl.NoneType
 
 @apply
+class ArgGetter(_PythonFunction):
+    def handler(self, i):
+        import sys
+        return sys.argv[i]
+
+@apply
 class PyableModule(type_impl._Type):
     size = 0
     def getattr_type(self, bs): bs.flow.stack.append(Type)
     def getattr_type_number(self, bs): bs.flow.stack.append(TypeNumber)
     def getattr_raw(self, bs): bs.flow.stack.append(RawType)
     def getattr_set_list_impl(self, bs): bs.flow.stack.append(SetListImpl)
-    def getattr_args(self, bs): bs.flow.stack.append(ArgGetter)
-    #def getattr_args(self, bs): type_impl.ProtoTuple.load(
+    def getattr_args(self, bs):
+        import sys
+        for arg in sys.argv[1:]:
+            bs.this.append(type_impl.Str.load_constant(arg))
+        bs.this.append(type_impl.prototuples[(type_impl.Str,) * len(sys.argv[1:])].load())

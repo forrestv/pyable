@@ -3,6 +3,7 @@ from __future__ import division
 import ast
 import random
 import copy
+import struct
 
 import type_impl
 import util
@@ -801,7 +802,7 @@ def translate(desc, flow, stack=None, this=None):
                 @bs.this.append
                 def _(bs, t=t):
                     arg_types = tuple(bs.flow.stack[-1 - i] for i, a in enumerate(t.elts))[::-1]
-                    bs.this.append(type_impl.ProtoTuple(arg_types).load())
+                    bs.this.append(type_impl.prototuples[arg_types].load())
             elif isinstance(t.ctx, ast.Store):
                 type = bs.flow.stack[-1]
                 
@@ -1035,7 +1036,20 @@ def translate(desc, flow, stack=None, this=None):
             bs.this.append(t.value)
             #assert Fal
         elif isinstance(t, ast.Exec):
-            a
+            assert not t.globals
+            assert not t.locals
+            bs.this.append(t.body)
+            @bs.this.append
+            def _(bs):
+                assert bs.flow.stack.pop() is type_impl.Str
+                def exec_it(i):
+                    def _(bs):
+                        s = type_impl.Str.to_python(struct.pack("l", i))
+                        tree = ast.parse(s, "<string>")
+                        assert isinstance(tree, ast.Module)
+                        bs.this.append(tree.body)
+                    return _
+                util.unlift_noncached(bs, exec_it, "exec")
         else:
             assert False, util.dump(t)
         bs.call_stack.extend(reversed(bs.this))
