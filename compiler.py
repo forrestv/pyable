@@ -12,6 +12,8 @@ import corepy.arch.x86_64.isa as isa
 import corepy.arch.x86_64.types.registers as registers
 import corepy.arch.x86_64.platform as platform
 from corepy.arch.x86_64.lib.memory import MemRef
+from corepy.lib.extarray import extarray
+from corepy.arch.x86_64.platform.linux.x86_64_exec import make_executable
 
 
 class Executable(object):
@@ -168,7 +170,7 @@ class BlockStatus(object):
         self.program = util.BareProgram()
         self.code = self.program.get_stream()
     
-    def finalise(self):
+    def finalise(self, desc):
         while False:
             old = self.code
             res = self.program.get_stream()
@@ -199,8 +201,35 @@ class BlockStatus(object):
         self.program.add(self.code)
         self.program.cache_code()
         blocks.append(self.program)
+        util.debug(self.program, desc)
+        #return self.program.inst_addr()
         
-        return self.program
+        global data_pos
+        data[data_pos:data_pos+len(self.program.render_code)] = self.program.render_code
+        #print data.buffer_info()
+        pos = data_pos
+        res = data.buffer_info()[0] + data_pos
+        data_pos += len(self.program.render_code)
+        #if data_pos % 512:
+        #    data_pos += 512 - data_pos % 512
+        #print "BUFFER", data[:data_pos]
+        self.program.render_code = OffsetListProxy(data, pos)
+        return res
+
+class OffsetListProxy(object):
+    def __init__(self, source, offset):
+        self.source = source
+        self.offset = offset
+    def __setitem__(self, item, value):
+        #print item, value
+        assert isinstance(item, slice)
+        assert item.step is None
+        self.source[self.offset + item.start:self.offset + item.stop] = value
+
+data = extarray('B', '\xff'*100000000)
+data.references = None
+data_pos = 0
+make_executable(*data.buffer_info())
 
 def alloc_locals(bs):
     if bs.flow.allocd_locals:
@@ -253,9 +282,7 @@ def translate(desc, flow, stack=None, this=None):
             print util.dump(t)
         
         if t is None:
-            p = bs.finalise()
-            util.debug(p, desc)
-            return p.inst_addr()
+            return bs.finalise(desc)
         elif callable(t):
             t(bs)
         elif isinstance(t, list):

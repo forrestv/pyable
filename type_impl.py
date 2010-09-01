@@ -1535,7 +1535,6 @@ class Function(_Type):
             
             def _(value):
                 def _(bs):
-                    print value, "XXX"
                     if isinstance(functions[value], str):
                         assert False, functions[value]
                     bs.this.append(functions[value](arg_types))
