@@ -213,6 +213,7 @@ class BlockStatus(object):
         #if data_pos % 512:
         #    data_pos += 512 - data_pos % 512
         #print "BUFFER", data[:data_pos]
+        data.references.append(self.program.render_code.references)
         self.program.render_code = OffsetListProxy(data, pos)
         return res
 
@@ -227,7 +228,7 @@ class OffsetListProxy(object):
         self.source[self.offset + item.start:self.offset + item.stop] = value
 
 data = extarray('B', '\xff'*100000000)
-data.references = None
+data.references = []
 data_pos = 0
 make_executable(*data.buffer_info())
 
@@ -1011,6 +1012,12 @@ def translate(desc, flow, stack=None, this=None):
                     targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
                     value=ast.Call(func=ast.Name(id='__import__', ctx=ast.Load()), args=[ast.Str(s=name.name)], keywords=[], starargs=None, kwargs=None)
                 ))
+        elif isinstance(t, ast.ImportFrom):
+            assert t.level == 0
+            for name in t.names:
+                assert isinstance(name, ast.alias)
+                if name.name:
+                    pass
         elif isinstance(t, ast.Attribute):
             if isinstance(t.ctx, ast.Load):
                 bs.this.append(t.value)
@@ -1062,6 +1069,13 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.Index):
             bs.this.append(t.value)
             #assert Fal
+        elif isinstance(t, ast.Slice):
+            bs.this.append(t.lower if t.lower is not None else type_impl.NoneType.load())
+            bs.this.append(t.upper if t.upper is not None else type_impl.NoneType.load())
+            bs.this.append(t.step if t.step is not None else type_impl.NoneType.load())
+            @bs.this.append
+            def _(bs):
+                type_impl.protoslices[tuple(bs.flow.stack[-3:])].load()(bs)
         elif isinstance(t, ast.Exec):
             assert not t.globals
             assert not t.locals

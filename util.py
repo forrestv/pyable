@@ -367,9 +367,19 @@ def unlift_noncached(bs, func, desc):
             lambda bs: add_redirection(bs.code, lambda rdi, flow=bs.flow.clone(): get_jmp(make_post(flow))),
             None,
         ])
+    
+    @called_from_asm
+    def glue(rdi, flow=bs.flow.clone()):
+        return make_thingy(flow, rdi)
+    
+    code = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_int64)(glue)
+    
     bs.code += isa.pop(registers.rdi)
-    add_redirection(bs.code, lambda rdi, flow=bs.flow.clone(): get_jmp(make_thingy(flow, rdi)))
+    bs.code += isa.mov(registers.rax, ctypes.cast(code, ctypes.c_void_p).value)
+    bs.code += isa.call(registers.rax)
     bs.this.append(None)
+    
+    bs.program.references.append(code)
 
 def hash_dict(d):
     v = 4310987423
@@ -410,6 +420,19 @@ def rev3(bs):
     push(bs, a)
     push(bs, b)
     push(bs, c)
+
+def rem1(bs):
+    regs = list(good_regs)
+    a = pop(bs, regs)
+    pop(bs, regs)
+    push(bs, a)
+
+def rem2(bs):
+    regs = list(good_regs)
+    a = pop(bs, regs)
+    pop(bs, regs)
+    pop(bs, regs)
+    push(bs, a)
 
 if __name__ == "__main__":
     print repr(get_jmp(0))

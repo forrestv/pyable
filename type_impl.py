@@ -1255,7 +1255,7 @@ class ProtoInstance(_Type):
 protoinstances = util.cdict(ProtoInstance)
 
 raw_strings = util.cdict(lambda s: ctypes.create_string_buffer(s))
-strings = util.cdict(lambda s: ctypes.create_string_buffer(struct.pack("L", len(s)) + s))
+strings = util.cdict(lambda s: ctypes.create_string_buffer(struct.pack("L", len(s)) + s + "\x00"))
 
 @apply
 class StrStrMeth(_Type):
@@ -1272,32 +1272,88 @@ class StrGetitemMeth(_Type):
     size = 1
     def __call__(self, arg_types):
         #assert not arg_types
-        assert arg_types == (Int,)
-        def _(bs):
-            assert bs.flow.stack.pop() is Int
-            bs.code += isa.pop(registers.r13)
-            assert bs.flow.stack.pop() is self
-            bs.code += isa.pop(registers.r12)
-            
-            skip = bs.program.get_unique_label()
-            bs.code += isa.test(registers.r12, 1)
-            bs.code += isa.jz(skip)
-            
-            bs.code += isa.mov(registers.r12, registers.rsp)
-            bs.code += isa.sub(registers.r12, 7)
-            
-            bs.code += skip
-            
-            bs.code += isa.add(registers.r12, 8)
-            bs.code += isa.add(registers.r12, registers.r13)
-            
-            bs.code += isa.mov(registers.rax, 3)
-            bs.code += isa.mov(registers.al, MemRef(registers.r12, data_size=8))
-            bs.code += isa.shl(registers.rax, 8)
-            bs.code += isa.mov(registers.al, 3)
-            
-            bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(Str)
+        if arg_types == (Int,):
+            def _(bs):
+                assert bs.flow.stack.pop() is Int
+                bs.code += isa.pop(registers.r13)
+                assert bs.flow.stack.pop() is self
+                bs.code += isa.pop(registers.r12)
+                
+                skip = bs.program.get_unique_label()
+                bs.code += isa.test(registers.r12, 1)
+                bs.code += isa.jz(skip)
+                
+                bs.code += isa.mov(registers.r12, registers.rsp)
+                bs.code += isa.sub(registers.r12, 7)
+                
+                bs.code += skip
+                
+                bs.code += isa.add(registers.r12, 8)
+                bs.code += isa.add(registers.r12, registers.r13)
+                
+                bs.code += isa.mov(registers.rax, 3)
+                bs.code += isa.mov(registers.al, MemRef(registers.r12, data_size=8))
+                bs.code += isa.shl(registers.rax, 8)
+                bs.code += isa.mov(registers.al, 3)
+                
+                bs.code += isa.push(registers.rax)
+                bs.flow.stack.append(Str)
+        elif len(arg_types) == 1 and isinstance(arg_types[0], ProtoSlice):
+            def _(bs):
+                bs.this.append(bs.flow.stack[-1].store())
+                @bs.this.append
+                def _(bs):
+                    step_type = bs.flow.stack.pop()
+                    if step_type is Int:
+                        bs.code += isa.pop(registers.r13)
+                    elif step_type is NoneType:
+                        bs.code += isa.mov(registers.r13, 1)
+                    else:
+                        assert False, step_type
+                    
+                    stop_type = bs.flow.stack.pop()
+                    if stop_type is Int:
+                        bs.code += isa.pop(registers.r12)
+                    elif stop_type is NoneType:
+                        bs.code += isa.mov(registers.r12, -1)
+                    else:
+                        assert False, stop_type
+                    
+                    start_type = bs.flow.stack.pop()
+                    if start_type is Int:
+                        bs.code += isa.pop(registers.r11)
+                    elif start_type is NoneType:
+                        bs.code += isa.mov(registers.r11, 0)
+                    else:
+                        assert False, start_type
+                    
+                    assert bs.flow.stack.pop() is self
+                    bs.code += isa.pop(registers.rbx)
+                    
+                    skip = bs.program.get_unique_label()
+                    end = bs.program.get_unique_label()
+                    
+                    bs.code += isa.test(registers.r12, 1)
+                    bs.code += isa.jz(skip)
+                    
+                    # handle short string
+                    
+                    bs.code += isa.ud2() # XXX
+                    
+                    bs.code += isa.jmp(end)
+                    
+                    bs.code += skip
+                    
+                    # handle long string
+                    
+                    # XXX
+                    
+                    #max((end - start) // step * step - start, len(s)) - min(start, (-start) // step)
+                    bs.code += isa.ud2() # XXX
+                    
+                    bs.code += end
+                    
+                    bs.flow.stack.append(Str)
         return _
 
 @apply
@@ -1609,6 +1665,40 @@ class NoneType(_Type):
     def to_python(self, data):
         assert not data
     def getattr___str__(self, bs): bs.flow.stack.append(NoneStrMeth)
+
+class ProtoSlice(_Type):
+    def __init__(self, (start_type, stop_type, step_type)):
+        self.start_type, self.stop_type, self.step_type = start_type, stop_type, step_type
+        self.size = sum(x.size for x in [self.start_type, self.stop_type, self.step_type])
+        _Type.__init__(self)
+    def load(self):
+        def _(bs):
+            for arg_type in [self.start_type, self.stop_type, self.step_type][::-1]:
+                assert bs.flow.stack.pop() is arg_type
+            bs.flow.stack.append(self)
+        return _
+    def store(self):
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            for arg_type in [self.start_type, self.stop_type, self.step_type]:
+                bs.flow.stack.append(arg_type)
+        return _
+    def getattr_start(self, bs):
+        bs.flow.stack.extend(self.types)
+        for i in xrange(bs.flow.stack.pop().size):
+            bs.code += isa.pop(registers.rax)
+        for i in xrange(bs.flow.stack.pop().size):
+            bs.code += isa.pop(registers.rax)
+    def getattr_stop(self, bs):
+        bs.flow.stack.extend(self.types)
+        for i in xrange(bs.flow.stack.pop().size):
+            bs.code += isa.pop(registers.rax)
+        util.rem1(bs)
+    def getattr_step(self, bs):
+        bs.flow.stack.extend(self.types)
+        util.rem2(bs)
+
+protoslices = util.cdict(ProtoSlice)
 
 @apply
 class NotImplementedType(_Type):

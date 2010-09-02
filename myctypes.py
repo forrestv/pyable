@@ -22,11 +22,14 @@ class _FuncPtr(type_impl._Type):
         self.func = cdll[name]
     def __call__(self, arg_types):
         def _(bs):
-            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str])
+            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str or x is Raw])
             floats = len([x for x in arg_types if x is type_impl.Float])
             for arg_type in arg_types:
                 type = bs.flow.stack.pop()
                 if type is type_impl.Int:
+                    ints -= 1
+                    bs.code += isa.pop(int_regs[ints])
+                elif type is Raw:
                     ints -= 1
                     bs.code += isa.pop(int_regs[ints])
                 elif type is type_impl.Float:
@@ -73,6 +76,106 @@ class CDLL(type_impl._Type):
         return _
 
 @apply
+class RawCopyFromMeth(type_impl._Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 2
+        assert arg_types[0] is Raw
+        assert arg_types[1] is type_impl.Int
+        def _(bs):
+            assert bs.flow.stack.pop() is type_impl.Int
+            bs.code += isa.pop(registers.r14)
+            assert bs.flow.stack.pop() is Raw
+            bs.code += isa.pop(registers.r13)
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.r12)
+            
+            bs.code += isa.shl(registers.r14, 3)
+            
+            bs.code += isa.mov(registers.rdi, registers.r12)
+            bs.code += isa.mov(registers.rsi, registers.r13)
+            bs.code += isa.mov(registers.rdx, registers.r14)
+            bs.code += isa.mov(registers.rax, ctypes.cast(ctypes.memmove, ctypes.c_void_p).value)	
+            bs.code += isa.call(registers.rax)
+            
+            bs.this.append(type_impl.NoneType.load())
+        return _
+
+@apply
+class RawGetitemMeth(type_impl._Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 1
+        assert arg_types[0] is type_impl.Int
+        def _(bs):
+            assert bs.flow.stack.pop() is type_impl.Int
+            bs.code += isa.pop(registers.rcx)
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rbx)
+            
+            bs.code += isa.add(registers.rbx, registers.rcx)
+            
+            bs.code += isa.mov(regsisters.rax, 0)
+            bs.code += isa.mov(registers.ax, MemRef(registers.rbx, data_size=8))
+            bs.code += isa.shl(registers.rax, 8)
+            bs.code += isa.mov(registers.ax, 2 * 1 + 1)
+            
+            bs.flow.stack.append(type_impl.Str)
+        return _
+@apply
+class RawSetitemMeth(type_impl._Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 2, arg_types
+        assert arg_types[0] is type_impl.Int
+        assert arg_types[1] is type_impl.Int
+        def _(bs):
+            assert bs.flow.stack.pop() is type_impl.Int
+            bs.code += isa.pop(registers.rcx)
+            assert bs.flow.stack.pop() is type_impl.Int
+            bs.code += isa.pop(registers.rbx)
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rax)
+            
+            bs.code += isa.shl(registers.rbx, 3)
+            bs.code += isa.add(registers.rax, registers.rbx)
+            
+            bs.code += isa.mov(MemRef(registers.rax), registers.rcx)
+            
+            type_impl.NoneType.load()(bs)
+        return _
+@apply
+class Raw(type_impl._Type):
+    size = 1
+    def getattr___getitem__(self, bs): bs.flow.stack.append(RawGetitemMeth)
+    def getattr___setitem__(self, bs): bs.flow.stack.append(RawSetitemMeth)
+    def getattr_load_object(self, bs): bs.flow.stack.append(RawLoadObjectMeth)
+    def getattr_store_object(self, bs): bs.flow.stack.append(RawStoreObjectMeth)
+    def getattr_copy_from(self, bs): bs.flow.stack.append(RawCopyFromMeth)
+    def getattr_raw(self, bs):
+        bs.code += isa.pop(registers.rax)
+        bs.code += isa.push(3)
+        bs.flow.stack.append(type_impl.Str)
+
+@apply
+class RawType(type_impl._Type):
+    size = 0
+    def __call__(self, arg_types):
+        assert len(arg_types) == 1
+        assert arg_types[0] is type_impl.Int
+        def _(bs):
+            assert bs.flow.stack.pop() is type_impl.Int
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rdi)
+            bs.code += isa.shl(registers.rdi, 3)
+            bs.code += isa.mov(registers.rax, util.malloc_addr)
+            bs.code += isa.call(registers.rax)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Raw)
+        return _
+
+@apply
 class CtypesModule(type_impl._Type):
     size = 0
     def getattr_CDLL(self, bs): bs.flow.stack.append(CDLL)
+    def getattr_create_string_buffer(self, bs): bs.flow.stack.append(RawType)

@@ -82,9 +82,9 @@ def execfile(filename, globals=None, locals=None):
 
 class file(object):
     def __init__(self, name, mode='r', bufsize=None):
-        print "a"
+        print "a", name, "hi", mode
         self._file = libc.fopen(name, mode)
-        print "b"
+        print "b", self._file
     def read(self, size=None):
         print "AHH", size
         if size is None:
