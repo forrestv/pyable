@@ -1381,6 +1381,32 @@ class StrOrdMeth(_Type):
             bs.flow.stack.append(Int)
         return _
 
+@apply
+class StrLenMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rax)
+            
+            skip = bs.program.get_unique_label()
+            end = bs.program.get_unique_label()
+            
+            bs.code += isa.test(registers.rax, 1)
+            bs.code += isa.jz(skip)
+            bs.code += isa.shr(registers.rax, 1)
+            bs.code += isa.and_(registers.rax, 127)
+            bs.code += isa.jmp(end)
+            
+            bs.code += skip
+            bs.code += isa.mov(registers.r12, MemRef(registers.rax))
+
+            bs.code += end
+            bs.code += isa.push(registers.r12)
+            bs.flow.stack.append(Int)
+        return _
+
 class _StrCmpMeth(_Type):
     size = 1
     def __init__(self, op_name):
@@ -1563,6 +1589,7 @@ class Str(_Type):
     def getattr___str__(self, bs): bs.flow.stack.append(StrStrMeth)
     def getattr___getitem__(self, bs): bs.flow.stack.append(StrGetitemMeth)
     def getattr___ord__(self, bs): bs.flow.stack.append(StrOrdMeth)
+    def getattr___len__(self, bs): bs.flow.stack.append(StrLenMeth)
     def getattr___gt__(self, bs): bs.flow.stack.append(StrCmpMeths['gt'])
     def getattr___lt__(self, bs): bs.flow.stack.append(StrCmpMeths['lt'])
     def getattr___ge__(self, bs): bs.flow.stack.append(StrCmpMeths['ge'])
