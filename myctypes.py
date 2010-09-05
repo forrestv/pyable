@@ -32,6 +32,7 @@ class _FuncPtr(type_impl._Type):
                 elif type is Raw:
                     ints -= 1
                     bs.code += isa.pop(int_regs[ints])
+                    bs.code += isa.add(int_regs[ints], 8)
                 elif type is type_impl.Float:
                     floats -= 1
                     bs.code += isa.movsd(float_regs[floats], MemRef(registers.rsp))
@@ -139,6 +140,7 @@ class RawSetitemMeth(type_impl._Type):
             
             bs.code += isa.shl(registers.rbx, 3)
             bs.code += isa.add(registers.rax, registers.rbx)
+            bs.code += isa.add(registers.rax, registers.rbx)
             
             bs.code += isa.mov(MemRef(registers.rax), registers.rcx)
             
@@ -147,14 +149,24 @@ class RawSetitemMeth(type_impl._Type):
 @apply
 class Raw(type_impl._Type):
     size = 1
-    def getattr___getitem__(self, bs): bs.flow.stack.append(RawGetitemMeth)
-    def getattr___setitem__(self, bs): bs.flow.stack.append(RawSetitemMeth)
-    def getattr_load_object(self, bs): bs.flow.stack.append(RawLoadObjectMeth)
-    def getattr_store_object(self, bs): bs.flow.stack.append(RawStoreObjectMeth)
-    def getattr_copy_from(self, bs): bs.flow.stack.append(RawCopyFromMeth)
+    #def getattr___getitem__(self, bs): bs.flow.stack.append(RawGetitemMeth)
+    #def getattr___setitem__(self, bs): bs.flow.stack.append(RawSetitemMeth)
+    #def getattr_load_object(self, bs): bs.flow.stack.append(RawLoadObjectMeth)
+    #def getattr_store_object(self, bs): bs.flow.stack.append(RawStoreObjectMeth)
+    #def getattr_copy_from(self, bs): bs.flow.stack.append(RawCopyFromMeth)
     def getattr_raw(self, bs):
-        bs.code += isa.pop(registers.rax)
-        bs.code += isa.push(3)
+        bs.code += isa.pop(registers.r12)
+        bs.code += isa.mov(registers.rdi, MemRef(registers.r12))
+        bs.code += isa.add(registers.rdi, 8)
+        bs.code += isa.mov(registers.rax, util.malloc_addr)
+        bs.code += isa.call(registers.rax)
+        bs.code += isa.push(registers.rax)
+        bs.code += isa.mov(registers.rdi, registers.rax)
+        bs.code += isa.mov(registers.rsi, registers.r12)
+        bs.code += isa.mov(registers.rcx, MemRef(registers.r12))
+        bs.code += isa.add(registers.rcx, 8)
+        bs.code += isa.rep()
+        bs.code += isa.movsb()
         bs.flow.stack.append(type_impl.Str)
 
 @apply
@@ -166,11 +178,13 @@ class RawType(type_impl._Type):
         def _(bs):
             assert bs.flow.stack.pop() is type_impl.Int
             assert bs.flow.stack.pop() is self
-            bs.code += isa.pop(registers.rdi)
-            bs.code += isa.shl(registers.rdi, 3)
+            bs.code += isa.pop(registers.r12)
+            bs.code += isa.mov(registers.rdi, registers.r12)
+            bs.code += isa.add(registers.rdi, 8)
             bs.code += isa.mov(registers.rax, util.malloc_addr)
             bs.code += isa.call(registers.rax)
             bs.code += isa.push(registers.rax)
+            bs.code += isa.mov(MemRef(registers.rax), registers.r12)
             bs.flow.stack.append(Raw)
         return _
 

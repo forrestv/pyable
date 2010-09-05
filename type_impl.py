@@ -1110,7 +1110,7 @@ class ProtoInstance(_Type):
             
             arg_size = sum(x.size for x in arg_types)
             for i in xrange(arg_size):
-                bs.code += isa.push(MemRef(registers.rsp, 8*arg_size))
+                bs.code += isa.push(MemRef(registers.rsp, 8*arg_size+8+8+8))
             bs.flow.stack.extend(arg_types)
 
             bs.this.append(bs.flow.stack[-2 - len(arg_types)]((self,) + arg_types))
@@ -1307,7 +1307,7 @@ class StrGetitemMeth(_Type):
                     if step_type is Int:
                         bs.code += isa.pop(registers.r13)
                     elif step_type is NoneType:
-                        bs.code += isa.mov(registers.r13, 1)
+                        pass
                     else:
                         assert False, step_type
                     
@@ -1315,7 +1315,7 @@ class StrGetitemMeth(_Type):
                     if stop_type is Int:
                         bs.code += isa.pop(registers.r12)
                     elif stop_type is NoneType:
-                        bs.code += isa.mov(registers.r12, -1)
+                        pass
                     else:
                         assert False, stop_type
                     
@@ -1323,33 +1323,300 @@ class StrGetitemMeth(_Type):
                     if start_type is Int:
                         bs.code += isa.pop(registers.r11)
                     elif start_type is NoneType:
-                        bs.code += isa.mov(registers.r11, 0)
+                        pass
                     else:
                         assert False, start_type
                     
                     assert bs.flow.stack.pop() is self
-                    bs.code += isa.pop(registers.rbx)
+                    bs.code += isa.pop(registers.r9)
                     
                     skip = bs.program.get_unique_label()
                     end = bs.program.get_unique_label()
                     
-                    bs.code += isa.test(registers.r12, 1)
+                    bs.code += isa.test(registers.r9, 1)
                     bs.code += isa.jz(skip)
                     
-                    # handle short string
-                    
-                    bs.code += isa.ud2() # XXX
-                    
+                    # short initial, string is on top of stack
+                    bs.code += isa.mov(registers.r8, registers.r9)
+                    bs.code += isa.shr(registers.r8, 1)
+                    bs.code += isa.and_(registers.r8, 127)
+                    bs.code += isa.lea(registers.r9, MemRef(registers.rsp, -7, data_size=None))
                     bs.code += isa.jmp(end)
                     
                     bs.code += skip
                     
-                    # handle long string
+                    # long initial
+                    bs.code += isa.mov(registers.r8, MemRef(registers.r9))
+                    bs.code += isa.add(registers.r9, 8)
                     
-                    # XXX
+                    bs.code += end
                     
-                    #max((end - start) // step * step - start, len(s)) - min(start, (-start) // step)
-                    bs.code += isa.ud2() # XXX
+                    # r8 = length
+                    # r9 = pointer
+                    
+                    # r11 = start
+                    # r12 = stop
+                    # r13 = step
+                    
+                    # r10 = slicelength
+                    
+                    #if step is None:
+                    #    step = 1
+                    if step_type is NoneType:
+                        bs.code += isa.mov(registers.r13, 1)
+                    
+                    #if start is None:
+                    if start_type is NoneType:
+                        #start = step < 0 ? length - 1 : 0
+                        if step_type is NoneType:
+                            bs.code += isa.mov(registers.r11, 0)
+                        else:
+                            bs.code += isa.cmp(registers.r13, 0)
+                            skip2 = bs.program.get_unique_label()
+                            end2 = bs.program.get_unique_label()
+                            bs.code += isa.jl(skip2)
+                            bs.code += isa.mov(registers.r11, 0)
+                            bs.code += isa.jmp(end2)
+                            bs.code += skip2
+                            bs.code += isa.mov(registers.r11, registers.r8)
+                            bs.code += isa.dec(registers.r11)
+                            bs.code += end2
+                    #else:
+                    else:
+                        #if start < 0:
+                        #    start += length
+                        #    if start < 0:
+                        #        start = step < 0 ? -1 : 0
+                        #elif start >= length:
+                        #    start = step < 0 ? length - 1 : length
+                        bs.code += isa.cmp(registers.r11, 0)
+                        skip2 = bs.program.get_unique_label()
+                        end2 = bs.program.get_unique_label()
+                        bs.code += isa.jl(skip2)
+                        
+                        bs.code += isa.cmp(registers.r11, registers.r8)
+                        bs.code += isa.jl(end2)
+                        
+                        bs.code += isa.cmp(registers.r13, 0)
+                        skip5 = bs.program.get_unique_label()
+                        end5 = bs.program.get_unique_label()
+                        bs.code += isa.jl(skip5)
+                        bs.code += isa.mov(registers.r11, registers.r8)
+                        bs.code += isa.jmp(end5)
+                        bs.code += skip5
+                        bs.code += isa.mov(registers.r11, registers.r8)
+                        bs.code += isa.dec(registers.r11)
+                        bs.code += end5
+                        
+                        bs.code += isa.jmp(end2)
+                        bs.code += skip2
+                        bs.code += isa.add(registers.r11, registers.r8)
+                        
+                        bs.code += isa.cmp(registers.r11, 0)
+                        skip3 = bs.program.get_unique_label()
+                        end3 = bs.program.get_unique_label()
+                        bs.code += isa.jl(skip3)
+                        bs.code += isa.jmp(end3)
+                        bs.code += skip3
+                        
+                        bs.code += isa.cmp(registers.r13, 0)
+                        skip4 = bs.program.get_unique_label()
+                        end4 = bs.program.get_unique_label()
+                        bs.code += isa.jl(skip4)
+                        bs.code += isa.mov(registers.r11, 0)
+                        bs.code += isa.jmp(end4)
+                        bs.code += skip4
+                        bs.code += isa.mov(registers.r11, -1)
+                        bs.code += end4
+                        
+                        bs.code += end3
+                        
+                        bs.code += end2
+                    
+                    #if stop is None:
+                    if stop_type is NoneType:
+                        #stop = step < 0 ? -1 : length
+                        if step_type is NoneType:
+                            bs.code += isa.mov(registers.r12, 0)
+                        else:
+                            bs.code += isa.cmp(registers.r13, 0)
+                            skip2 = bs.program.get_unique_label()
+                            end2 = bs.program.get_unique_label()
+                            bs.code += isa.jl(skip2)
+                            bs.code += isa.mov(registers.r12, registers.r8)
+                            bs.code += isa.jmp(end2)
+                            bs.code += skip2
+                            bs.code += isa.mov(registers.r12, -1)
+                            bs.code += end2
+                    #else:
+                    else:
+                        #if stop < 0:
+                        #    stop += length
+                        #    if stop < 0:
+                        #        stop = step < 0 ? -1 : 0
+                        #elif stop >= length:
+                        #    stop = step < 0 ? length - 1 : length
+                        bs.code += isa.cmp(registers.r12, 0)
+                        skip2 = bs.program.get_unique_label()
+                        end2 = bs.program.get_unique_label()
+                        bs.code += isa.jl(skip2)
+                        
+                        bs.code += isa.cmp(registers.r12, registers.r8)
+                        bs.code += isa.jl(end2)
+                        
+                        bs.code += isa.cmp(registers.r13, 0)
+                        skip5 = bs.program.get_unique_label()
+                        end5 = bs.program.get_unique_label()
+                        bs.code += isa.jl(skip5)
+                        bs.code += isa.mov(registers.r12, registers.r8)
+                        bs.code += isa.jmp(end5)
+                        bs.code += skip5
+                        bs.code += isa.mov(registers.r12, registers.r8)
+                        bs.code += isa.dec(registers.r12)
+                        bs.code += end5
+                        
+                        bs.code += isa.jmp(end2)
+                        bs.code += skip2
+                        bs.code += isa.add(registers.r12, registers.r8)
+                        
+                        bs.code += isa.cmp(registers.r12, 0)
+                        skip3 = bs.program.get_unique_label()
+                        end3 = bs.program.get_unique_label()
+                        bs.code += isa.jl(skip3)
+                        bs.code += isa.jmp(end3)
+                        bs.code += skip3
+                        
+                        bs.code += isa.cmp(registers.r13, 0)
+                        skip4 = bs.program.get_unique_label()
+                        end4 = bs.program.get_unique_label()
+                        bs.code += isa.jl(skip4)
+                        bs.code += isa.mov(registers.r12, 0)
+                        bs.code += isa.jmp(end4)
+                        bs.code += skip4
+                        bs.code += isa.mov(registers.r12, -1)
+                        bs.code += end4
+                        
+                        bs.code += end3
+                        
+                        bs.code += end2
+                    
+                    #if (step < 0 and stop >= start) or (step > 0 and start >= stop):
+                    #        slicelength = 0
+                    #elif step < 0:
+                    #        slicelength = (stop - start + 1)/step + 1
+                    #else:
+                    #        slicelength = (stop - start - 1)/step + 1
+                    
+                    bs.code += isa.cmp(registers.r13, 0)
+                    skip3 = bs.program.get_unique_label()
+                    end3 = bs.program.get_unique_label()
+                    bs.code += isa.jl(skip3)
+                    # step > 0
+                    bs.code += isa.cmp(registers.r12, registers.r11)
+                    skip4 = bs.program.get_unique_label()
+                    end4 = bs.program.get_unique_label()
+                    bs.code += isa.jle(skip4)
+                    # stop > start
+                    bs.code += isa.mov(registers.rax, registers.r12)
+                    bs.code += isa.sub(registers.rax, registers.r11)
+                    bs.code += isa.dec(registers.rax)
+                    
+                    bs.code += isa.mov(registers.rbx, registers.r13)
+                    bs.code += isa.mov(registers.rdx, 0)
+                    bs.code += isa.cqo()
+                    bs.code += isa.idiv(registers.rbx)
+                    bs.code += isa.inc(registers.rax)
+                    bs.code += isa.mov(registers.r10, registers.rax)
+                    bs.code += isa.jmp(end4)
+                    bs.code += skip4
+                    bs.code += isa.mov(registers.r10, 0)
+                    bs.code += end4
+                    
+                    bs.code += isa.jmp(end3)
+                    bs.code += skip3
+                    # step < 0
+                    bs.code += isa.cmp(registers.r12, registers.r11)
+                    skip4 = bs.program.get_unique_label()
+                    end4 = bs.program.get_unique_label()
+                    bs.code += isa.jge(skip4)
+                    # stop < start
+                    
+                    bs.code += isa.mov(registers.rax, registers.r12)
+                    bs.code += isa.sub(registers.rax, registers.r11)
+                    bs.code += isa.inc(registers.rax)
+                    bs.code += isa.mov(registers.rbx, registers.r13)
+                    bs.code += isa.mov(registers.rdx, 0)
+                    bs.code += isa.cqo()
+                    bs.code += isa.idiv(registers.rbx)
+                    bs.code += isa.inc(registers.rax)
+                    bs.code += isa.mov(registers.r10, registers.rax)
+                    bs.code += isa.jmp(end4)
+                    bs.code += skip4
+                    bs.code += isa.mov(registers.r10, 0)
+                    
+                    bs.code += end4
+                    
+                    bs.code += end3
+                    
+                    bs.code += isa.add(registers.r11, registers.r9)
+                    bs.code += isa.add(registers.r12, registers.r9)
+                    
+                    skip = bs.program.get_unique_label()
+                    end = bs.program.get_unique_label()
+                    bs.code += isa.cmp(registers.r10, 7)
+                    bs.code += isa.jle(skip)
+                    # long
+                    bs.code += isa.mov(registers.rdi, registers.r10)
+                    bs.code += isa.add(registers.rdi, 8)
+                    bs.code += isa.mov(registers.rax, util.malloc_addr)
+                    bs.code += isa.push(registers.r11)
+                    bs.code += isa.call(registers.rax)
+                    bs.code += isa.pop(registers.r11)
+                    bs.code += isa.push(registers.rax)
+                    bs.code += isa.mov(MemRef(registers.rax), registers.r10)
+                    bs.code += isa.add(registers.rax, 8)
+                    bs.code += isa.jmp(end)
+                    
+                    bs.code += skip
+                    # short
+                    bs.code += isa.mov(registers.rax, registers.r10)
+                    bs.code += isa.shl(registers.rax, 1)
+                    bs.code += isa.or_(registers.rax, 1)
+                    bs.code += isa.push(registers.rax)
+                    bs.code += isa.lea(registers.rax, MemRef(registers.rsp, 1, data_size=None))
+                    
+                    bs.code += end
+                    
+                    bs.code += isa.cmp(registers.r13, 0)
+                    skip = bs.program.get_unique_label()
+                    end = bs.program.get_unique_label()
+                    bs.code += isa.jl(skip)
+                    
+                    last_end = bs.program.get_unique_label()
+                    last_loop = bs.program.get_unique_label()
+                    bs.code += last_loop
+                    bs.code += isa.cmp(registers.r11, registers.r12)
+                    bs.code += isa.jge(last_end)
+                    bs.code += isa.mov(registers.cl, MemRef(registers.r11, data_size=8))
+                    bs.code += isa.mov(MemRef(registers.rax, data_size=8), registers.cl)
+                    bs.code += isa.add(registers.r11, registers.r13)
+                    bs.code += isa.inc(registers.rax)
+                    bs.code += isa.jmp(last_loop)
+                    bs.code += last_end
+                    bs.code += isa.jmp(end)
+                    
+                    bs.code += skip
+                    last_end = bs.program.get_unique_label()
+                    last_loop = bs.program.get_unique_label()
+                    bs.code += last_loop
+                    bs.code += isa.cmp(registers.r11, registers.r12)
+                    bs.code += isa.jle(last_end)
+                    bs.code += isa.mov(registers.cl, MemRef(registers.r11, data_size=8))
+                    bs.code += isa.mov(MemRef(registers.rax, data_size=8), registers.cl)
+                    bs.code += isa.add(registers.r11, registers.r13)
+                    bs.code += isa.inc(registers.rax)
+                    bs.code += isa.jmp(last_loop)
+                    bs.code += last_end
                     
                     bs.code += end
                     
@@ -1405,6 +1672,88 @@ class StrLenMeth(_Type):
             bs.code += end
             bs.code += isa.push(registers.r12)
             bs.flow.stack.append(Int)
+        return _
+
+@apply
+class StrJoinMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert len(arg_types) == 1
+        def _(bs):
+            def _(bs):
+                assert bs.flow.stack[-1] is arg_types[0]
+            bs.this.append(
+                ast.Call(
+                    func=ast.Attribute(
+                        value=_,
+                        attr='__iter__',
+                        ctx=ast.Load(),
+                        ),
+                    args=[],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                    ),
+                )
+            @bs.this.append
+            def _(bs):
+                bs.this.append(util.dup)
+                bs.this.append(
+                    ast.Call(
+                        func=ast.Attribute(
+                            value=_,
+                            attr='next',
+                            ctx=ast.Load(),
+                            ),
+                        args=[],
+                        keywords=[],
+                        starargs=None,
+                        kwargs=None,
+                        ),
+                    )
+                @util.memoize
+                def make_b(flow, t=t):
+                    return translate("while_b", flow, this=[
+                        t.body,
+                        lambda bs: util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_a(bs.flow))),
+                        None,
+                    ])
+                
+                number = random.randrange(1000)
+                
+                @util.memoize
+                def make_c(flow, stack=list(bs.call_stack), number=number):
+                    def _(bs):
+                        removed = bs.flow.ctrl_stack.pop()
+                        assert removed[2] == number
+                    return translate("while_c", flow, stack=stack, this=[
+                        _,
+                    ])
+                
+                skip = bs.program.get_unique_label()
+                end = bs.program.get_unique_label()
+                
+                bs.code += isa.test(registers.rax, 1)
+                bs.code += isa.jz(skip)
+                bs.code += isa.shr(registers.rax, 1)
+                bs.code += isa.and_(registers.rax, 127)
+                bs.code += isa.jmp(end)
+                
+                bs.code += skip
+                bs.code += isa.mov(registers.r12, MemRef(registers.rax))
+
+                bs.code += end
+                bs.code += isa.push(registers.r12)
+                bs.flow.stack.append(Int)
+                
+                # x = top.__iter__()
+                # while True:
+                #     item = x.next()
+                #     assert type is Str
+                #     push item
+                #     length += len(item)
+                # alloc
+                # copy
         return _
 
 class _StrCmpMeth(_Type):
@@ -1577,6 +1926,7 @@ class Str(_Type):
         return _
     def to_python(self, data):
         i, = struct.unpack("l", data)
+        
         if i & 1:
             first, data = struct.unpack("B7s", struct.pack("l", i))
             assert first & 1
@@ -1590,6 +1940,7 @@ class Str(_Type):
     def getattr___getitem__(self, bs): bs.flow.stack.append(StrGetitemMeth)
     def getattr___ord__(self, bs): bs.flow.stack.append(StrOrdMeth)
     def getattr___len__(self, bs): bs.flow.stack.append(StrLenMeth)
+    def getattr_join(self, bs): bs.flow.stack.append(StrJoinMeth)
     def getattr___gt__(self, bs): bs.flow.stack.append(StrCmpMeths['gt'])
     def getattr___lt__(self, bs): bs.flow.stack.append(StrCmpMeths['lt'])
     def getattr___ge__(self, bs): bs.flow.stack.append(StrCmpMeths['ge'])

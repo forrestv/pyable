@@ -4,4 +4,4 @@
 class ValueError(Exception):
     pass
 
-raise ValueError(), "hi"
+raise ValueError

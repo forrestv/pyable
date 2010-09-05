@@ -434,6 +434,12 @@ def rem2(bs):
     pop(bs, regs)
     push(bs, a)
 
+def dup(bs):
+    regs = list(good_regs)
+    a = pop(bs, regs)
+    push(bs, a)
+    push(bs, a)
+
 if __name__ == "__main__":
     print repr(get_jmp(0))
     print repr(get_call(0))

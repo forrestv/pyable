@@ -107,7 +107,7 @@ class Flow(object):
         return "Flow<%r>" % self.__dict__
     
     def __hash__(self):
-        return 0
+        return hash(tuple(self.stack))
         return id(self.executable) ^ self.space ^ util.hash_dict(self.vars) ^ util.hash_dict(self.var_type_impl)
     def __eq__(self, other):
         if not isinstance(other, Flow):
@@ -938,6 +938,33 @@ def translate(desc, flow, stack=None, this=None):
                 bs.code += isa.ret() # return address
             
             bs.this.append(None)
+        elif isinstance(t, ast.Raise):
+            if t.value is None:
+                bs.this.append(ast.Name(id='None', ctx=ast.Load()))
+            else:
+                bs.this.append(t.value)
+            @bs.this.append
+            def _(bs):
+                type = bs.flow.stack.pop()
+                
+                if type.size >= 1:
+                    bs.code += isa.pop(registers.r13)
+                if type.size >= 2:
+                    bs.code += isa.pop(registers.r14)
+                if type.size >= 3:
+                    assert False
+                
+                bs.code += isa.mov(registers.r12, type.id)
+                
+                # leave
+                bs.code += isa.mov(registers.rsp, registers.rbp)
+                bs.code += isa.pop(registers.rbp)
+                
+                assert not bs.flow.stack, bs.flow.stack
+                
+                bs.code += isa.ret() # return address
+            
+            bs.this.append(None)
         elif isinstance(t, ast.Pass):
             pass # haha
         elif isinstance(t, ast.Assert):
@@ -1086,6 +1113,7 @@ def translate(desc, flow, stack=None, this=None):
                 def exec_it(i):
                     def _(bs):
                         s = type_impl.Str.to_python(struct.pack("l", i))
+                        print repr(s)
                         tree = ast.parse(s, "<string>")
                         assert isinstance(tree, ast.Module)
                         bs.this.append(tree.body)
