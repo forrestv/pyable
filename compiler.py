@@ -1113,7 +1113,6 @@ def translate(desc, flow, stack=None, this=None):
                 def exec_it(i):
                     def _(bs):
                         s = type_impl.Str.to_python(struct.pack("l", i))
-                        print repr(s)
                         tree = ast.parse(s, "<string>")
                         assert isinstance(tree, ast.Module)
                         bs.this.append(tree.body)

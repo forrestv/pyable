@@ -82,15 +82,12 @@ def execfile(filename, globals=None, locals=None):
 
 class file(object):
     def __init__(self, name, mode='r', bufsize=None):
-        print "a", name, "hi", mode
         self._file = libc.fopen(name, mode)
-        print "b", self._file
     def read(self, size=None):
         if size is None:
             size = 1000000
         res = ctypes.create_string_buffer(size)
         actual = libc.fread(res, 1, size, self._file)
-        print "actual", actual, res.raw
         return res.raw[:actual]
         #print "AHH", size
         #if size is None:
@@ -207,8 +204,6 @@ class module(object):
 def __import__(name):
     aa
 
-print 1
-
 class listiterator():
     def __init__(self, parent):
         self.parent = parent
@@ -289,30 +284,12 @@ _pyable.set_list_impl(list)
 def len(o):
     return o.__len__()
 
-
-
-
-print 2
-
 def eval(s):
     return _pyable.eval(s)
 
-print 3
-
 a = _pyable.args[0]
 
-print 3.5, a
-
-x = open(a)
-print 3.7
-
-y = x.read()
-
-print 4, y
-
-exec y
-
-print 5
+exec open(a).read()
 
 if 0:
     import random

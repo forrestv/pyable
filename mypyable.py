@@ -261,6 +261,28 @@ class ArgGetter(_PythonFunction):
         return sys.argv[i]
 
 @apply
+class ArgGetterGetItem(type_impl._Type):
+    size = 0
+    def __call__(self, arg_types):
+        assert arg_types == (type_impl.Int,)
+        def _(bs):
+            assert bs.flow.stack.pop() is type_impl.Int
+            assert bs.flow.stack.pop() is self
+            def _(value):
+                def _(bs):
+                    import sys
+                    bs.this.append(type_impl.Str.load_constant(sys.argv[1 + value]))
+                return _
+            util.unlift(bs, _, "ArgGetterGetItem")
+        return _
+
+@apply
+class ArgGetter(type_impl._Type):
+    size = 0
+    def getattr___getitem__(self, bs):
+        bs.flow.stack.append(ArgGetterGetItem)
+
+@apply
 class PyableModule(type_impl._Type):
     size = 0
     def getattr_type(self, bs): bs.flow.stack.append(Type)
@@ -268,6 +290,8 @@ class PyableModule(type_impl._Type):
     def getattr_raw(self, bs): bs.flow.stack.append(RawType)
     def getattr_set_list_impl(self, bs): bs.flow.stack.append(SetListImpl)
     def getattr_args(self, bs):
+        bs.flow.stack.append(ArgGetter)
+        return
         import sys
         for arg in sys.argv[1:]:
             bs.this.append(type_impl.Str.load_constant(arg))

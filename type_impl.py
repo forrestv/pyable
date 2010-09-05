@@ -1569,9 +1569,11 @@ class StrGetitemMeth(_Type):
                     bs.code += isa.mov(registers.rdi, registers.r10)
                     bs.code += isa.add(registers.rdi, 8)
                     bs.code += isa.mov(registers.rax, util.malloc_addr)
+                    bs.code += isa.push(registers.r10)
                     bs.code += isa.push(registers.r11)
                     bs.code += isa.call(registers.rax)
                     bs.code += isa.pop(registers.r11)
+                    bs.code += isa.pop(registers.r10)
                     bs.code += isa.push(registers.rax)
                     bs.code += isa.mov(MemRef(registers.rax), registers.r10)
                     bs.code += isa.add(registers.rax, 8)
@@ -1667,10 +1669,10 @@ class StrLenMeth(_Type):
             bs.code += isa.jmp(end)
             
             bs.code += skip
-            bs.code += isa.mov(registers.r12, MemRef(registers.rax))
+            bs.code += isa.mov(registers.rax, MemRef(registers.rax))
 
             bs.code += end
-            bs.code += isa.push(registers.r12)
+            bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Int)
         return _
 
@@ -1917,7 +1919,7 @@ class Str(_Type):
     def load_constant(self, s):
         assert isinstance(s, str)
         def _(bs):
-            if len(s) >= 8 or 1:
+            if len(s) >= 8:
                 bs.code += isa.mov(registers.rax, ctypes.cast(strings[s], ctypes.c_void_p).value)
             else:
                 bs.code += isa.mov(registers.rax, struct.unpack("l", struct.pack("B7s", 2 * len(s) + 1, s))[0])
