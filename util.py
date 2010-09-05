@@ -361,6 +361,7 @@ def unlift_noncached(bs, func, desc):
     @memoize
     def make_post(flow):
         return compiler.translate("unlift_post", flow, stack=list(bs.call_stack))
+    
     def make_thingy(flow, data):
         return compiler.translate("unlift_thingy", flow, this=[
             func(data),
@@ -376,7 +377,11 @@ def unlift_noncached(bs, func, desc):
     
     bs.code += isa.pop(registers.rdi)
     bs.code += isa.mov(registers.rax, ctypes.cast(code, ctypes.c_void_p).value)
+    bs.code += isa.mov(registers.r12, registers.rsp)
+    bs.code += isa.and_(registers.rsp, -16)
     bs.code += isa.call(registers.rax)
+    bs.code += isa.mov(registers.rsp, registers.r12)
+    bs.code += isa.jmp(registers.rax)
     bs.this.append(None)
     
     bs.program.references.append(code)

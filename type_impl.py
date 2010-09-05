@@ -884,7 +884,7 @@ class Scope(object):
             for attr_, (type_, pos_) in new_slots.iteritems():
                 old_pos_ = bs.flow.get_var_loc(attr_)
                 for i in xrange(type_.size):
-                    bs.code += isa.mov(registers.rax, MemRef(registers.rbp, loc + i * 8))
+                    bs.code += isa.mov(registers.rax, MemRef(registers.rbp, old_pos_ + i * 8))
                     bs.code += isa.mov(MemRef(registers.r15, 8 * (pos_ + i)), registers.rax)
                 bits |= name_bits[attr_]
             
