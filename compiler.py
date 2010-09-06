@@ -171,17 +171,17 @@ class BlockStatus(object):
         self.code = self.program.get_stream()
     
     def finalise(self, desc):
+        def check(a, b):
+            if not isinstance(a, isa.push): return False
+            if not isinstance(b, isa.pop): return False
+            return a._operands[0] is b._operands[0]
         while False:
             old = self.code
             res = self.program.get_stream()
             for i in xrange(len(old)):
-                if i != len(old) - 1 and \
-                    str(old[i]) == str(isa.push(registers.rax)) and \
-                    str(old[i + 1]) == str(isa.pop(registers.rax)):
+                if i != len(old) - 1 and check(old[i], old[i+1]):
                         pass
-                elif i != 0 and \
-                    str(old[i - 1]) == str(isa.push(registers.rax)) and \
-                    str(old[i]) == str(isa.pop(registers.rax)):
+                elif i != 0 and check(old[i-1], old[i]):
                         pass
                 else:
                     res.add(old[i])
@@ -226,6 +226,12 @@ class OffsetListProxy(object):
         assert isinstance(item, slice)
         assert item.step is None
         self.source[self.offset + item.start:self.offset + item.stop] = value
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            item = slice(item.start + self.offset, item.stop+self.offset, item.step)
+        else:
+            item += self.offset
+        return self.source[item]
 
 data = extarray('B', '\xff'*100000000)
 data.references = []

@@ -286,7 +286,7 @@ class ArgGetter(type_impl._Type):
 class PyableModule(type_impl._Type):
     size = 0
     def getattr_type(self, bs): bs.flow.stack.append(Type)
-    def getattr_type_number(self, bs): bs.flow.stack.append(TypeNumber)
+    def getattr_type_number(self, bs): bs.flow.stack.append(Type_Number)
     def getattr_raw(self, bs): bs.flow.stack.append(RawType)
     def getattr_set_list_impl(self, bs): bs.flow.stack.append(SetListImpl)
     def getattr_args(self, bs):

@@ -1,6 +1,3 @@
-def ord(x):
-    return x.__ord__()
-
 a = "hello world"
 
 print a
@@ -14,5 +11,5 @@ print ord(a[7])
 print ord(a[2])
 
 
-print ord("aaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+print ord("6")
 print ord("a")

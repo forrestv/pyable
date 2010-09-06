@@ -1088,13 +1088,14 @@ class ProtoInstance(_Type):
         return "ProtoInstance(%s)" % (self.type,)
     def new(self, arg_types):
         def _(bs):
-            bs.code += isa.mov(registers.rdi, 8 * 2)
+            bs.code += isa.mov(registers.rdi, 8 * 3)
             bs.code += isa.mov(registers.rax, util.malloc_addr)
             bs.code += isa.call(registers.rax)
             bs.code += isa.mov(registers.r12, registers.rax)
             
             bs.code += isa.mov(MemRef(registers.r12), 0)
             bs.code += isa.mov(MemRef(registers.r12, 8), 0)
+            bs.code += isa.mov(MemRef(registers.r12, 16), 0)
             
             bs.code += isa.push(registers.r12)
             bs.flow.stack.append(self)
@@ -1185,6 +1186,8 @@ class ProtoInstance(_Type):
                         # change reference and id on object
                         bs.code += isa.mov(MemRef(registers.r12), new_id)
                         bs.code += isa.mov(MemRef(registers.r12, 8), registers.r15)
+                        bs.code += isa.mov(registers.rax, name_bits[attr])
+                        bs.code += isa.or_(MemRef(registers.r12, 16), registers.rax)
                         
                         slots = new_slots
                     
@@ -1205,6 +1208,7 @@ class ProtoInstance(_Type):
             return _
         def _(bs):
             assert bs.flow.stack.pop() is self
+            
             bs.code += isa.pop(registers.r12)
             bs.code += isa.push(MemRef(registers.r12)) # slot id
             def _(value):
