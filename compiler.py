@@ -171,6 +171,7 @@ class BlockStatus(object):
         self.code = self.program.get_stream()
     
     def finalise(self, desc):
+        
         def check(a, b):
             if not isinstance(a, isa.push): return False
             if not isinstance(b, isa.pop): return False
@@ -222,16 +223,17 @@ class OffsetListProxy(object):
         self.source = source
         self.offset = offset
     def __setitem__(self, item, value):
-        #print item, value
-        assert isinstance(item, slice)
-        assert item.step is None
-        self.source[self.offset + item.start:self.offset + item.stop] = value
+        if isinstance(item, slice):
+            item = slice(item.start + self.offset, item.stop+self.offset, item.step)
+        else:
+            item += self.offset
+        self.source.__setitem__(item, value)
     def __getitem__(self, item):
         if isinstance(item, slice):
             item = slice(item.start + self.offset, item.stop+self.offset, item.step)
         else:
             item += self.offset
-        return self.source[item]
+        return self.source.__getitem__(item)
 
 data = extarray('B', '\xff'*100000000)
 data.references = []
@@ -1070,7 +1072,6 @@ def translate(desc, flow, stack=None, this=None):
             else:
                 assert False
         elif isinstance(t, ast.ClassDef):
-            #assert not t.bases
             assert not t.decorator_list
             
             import mypyable
@@ -1079,7 +1080,7 @@ def translate(desc, flow, stack=None, this=None):
                 targets=[ast.Name(id=t.name, ctx=ast.Store())],
                 value=ast.Call(
                     func=mypyable.Type.load(),
-                    args=[type_impl.Str.load_constant(t.name), type_impl.NoneType.load(), type_impl.NoneType.load()],
+                    args=[type_impl.Str.load_constant(t.name), t.bases, type_impl.NoneType.load()],
                     keywords=[],
                     starargs=None,
                     kwargs=None,

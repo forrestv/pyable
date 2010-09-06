@@ -23,9 +23,11 @@ def any(iterable):
 def bin(x):
     x = int(x)
     result = []
-    while x:
-        result.append(x & 1)
+    while True:
+        result.append('1' if x & 1 else '0')
         x >>= 1
+        if not x:
+            break
     result.append('0b')
     return ''.join(reversed(result))
 
@@ -82,7 +84,17 @@ def execfile(filename, globals=None, locals=None):
 
 class file(object):
     def __init__(self, name, mode='r', bufsize=None):
-        self._file = libc.fopen(name, mode)
+        self.name = name
+        if name == "<stdin>":
+            self._file = libc.stdin
+        elif name == "<stdout>":
+            self._file = libc.stdout
+        elif name == "<stderr>":
+            self._file = libc.stderr
+        else:
+            self._file = libc.fopen(name, mode)
+            if not self._file:
+                assert False, "could not open file!"
     def read(self, size=None):
         if size is None:
             size = 1000000
@@ -104,10 +116,18 @@ class file(object):
         #print "b"
         #return res.raw[:actual]
 
+    def write(self, data):
+        libc.fwrite(self._file, 1, len(data), data)
+
 def filter(function, iterable):
-    for element in iterable:
-        if (function is not None and function(element)) or (function is None and element):
-            yield element
+    if function is None:
+        for element in iterable:
+            if element:
+                yield element
+    else:
+        for element in iterable:
+            if function(element):
+                yield element
 
 class float(object):
     pass

@@ -18,9 +18,10 @@ def number(inst):
     inst.id = len(id_to_type)
     assert inst.id not in id_to_type
     id_to_type[inst.id] = inst
+    assert inst.size <= 4
 
-@apply
-class Type(object):
+#@apply
+class _Type(object):
     def __init__(self):
         number(self)
     def __repr__(self):
@@ -37,7 +38,7 @@ class Type(object):
         return None
     def to_python(self, data):
         return self
-_Type = Type.__class__
+#_Type = Type.__class__
 
 @apply
 class IntAbsMeth(_Type):
@@ -1964,14 +1965,23 @@ def _get_func_say(x):
 say_functions = util.cdict(_get_func_say)
 
 @apply
+class FunctionStr(_Type):
+    size = 2
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            a 
+        return _
+
+@apply
 class Function(_Type):
     size = 2
+    def getattr___repr__(self, bs): bs.flow.stack.append(FunctionStr)
     def __call__(self, arg_types):
         def _(bs):
             assert bs.flow.stack[-1 - len(arg_types)] is self, bs.flow.stack[-1 - len(arg_types)]
             arg_size = sum(x.size for x in arg_types)
-            bs.code += isa.push(MemRef(registers.rsp, 8*arg_size + 8))
-            #bs.code += isa.mov(registers.rax, MemRef(registers.rsp, 8*arg_size - 8))
+            bs.code += isa.mov(registers.rax, MemRef(registers.rsp, 8*arg_size + 8))
             
             def _(value):
                 def _(bs):

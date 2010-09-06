@@ -22,12 +22,16 @@ class _FuncPtr(type_impl._Type):
         self.func = cdll[name]
     def __call__(self, arg_types):
         def _(bs):
-            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str or x is Raw])
+            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str or x is Raw or x in _FuncPtr])
             floats = len([x for x in arg_types if x is type_impl.Float])
             pos = 0
             for arg_type in arg_types:
                 type = bs.flow.stack.pop()
                 if type is type_impl.Int:
+                    ints -= 1
+                    bs.code += isa.mov(int_regs[ints], MemRef(registers.rsp, pos))
+                    pos += 8
+                elif type is _FuncPtr:
                     ints -= 1
                     bs.code += isa.mov(int_regs[ints], MemRef(registers.rsp, pos))
                     pos += 8

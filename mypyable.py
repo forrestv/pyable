@@ -69,7 +69,9 @@ class _PythonFunction(type_impl._Type):
 
 @apply
 class Type(_PythonFunction):
-    def handler(self, name, bases, dict=None):
+    def handler(self, name, bases, dict):
+        if bases is None:
+            bases = []
         if dict is None:
             dict = {}
         return type_impl.ProtoObject(name, bases, dict)
