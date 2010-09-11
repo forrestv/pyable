@@ -5,6 +5,9 @@ import ctypes
 #libc = ctypes.CDLL(ctypes.util.find_library("c"))
 libc = ctypes.CDLL("libc.so.6")
 
+class object():
+    pass
+
 def abs(x):
     return x.__abs__()
 

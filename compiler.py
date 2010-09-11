@@ -176,7 +176,7 @@ class BlockStatus(object):
             if not isinstance(a, isa.push): return False
             if not isinstance(b, isa.pop): return False
             return a._operands[0] is b._operands[0]
-        while False:
+        while True:
             old = self.code
             res = self.program.get_stream()
             for i in xrange(len(old)):
@@ -875,7 +875,7 @@ def translate(desc, flow, stack=None, this=None):
                 
                 bs.this.append(util.swap)
                 
-                bs.this.append(ast.Call(func=_, args=[_], keywords=[], starargs=None, kwargs=None))
+                bs.this.append(ast.Call(func=_, args=[_], keywords=[], starargs=None, kwargs=None, name="sub"))
             elif isinstance(t.ctx, ast.Store):
                 bs.this.append(t.value)
                 
@@ -900,7 +900,7 @@ def translate(desc, flow, stack=None, this=None):
                 
                 bs.this.append(util.rev3)
                 
-                bs.this.append(ast.Call(func=_, args=[_, _], keywords=[], starargs=None, kwargs=None))
+                bs.this.append(ast.Call(func=_, args=[_, _], keywords=[], starargs=None, kwargs=None, name="store"))
                 
                 @bs.this.append
                 def _(bs):
@@ -1004,6 +1004,7 @@ def translate(desc, flow, stack=None, this=None):
                     keywords=[],
                     starargs=None,
                     kwargs=None,
+                    name="list",
                     ),
                 )
             for e in t.elts:
@@ -1080,7 +1081,7 @@ def translate(desc, flow, stack=None, this=None):
                 targets=[ast.Name(id=t.name, ctx=ast.Store())],
                 value=ast.Call(
                     func=mypyable.Type.load(),
-                    args=[type_impl.Str.load_constant(t.name), t.bases, type_impl.NoneType.load()],
+                    args=[type_impl.Str.load_constant(t.name), ast.Tuple(elts=t.bases, ctx=ast.Load()), type_impl.NoneType.load()],
                     keywords=[],
                     starargs=None,
                     kwargs=None,

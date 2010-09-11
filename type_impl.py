@@ -765,8 +765,14 @@ class ProtoTuple(_Type):
         return _
     def to_python(self, data):
         assert len(data) == 8
-        data = struct.unpack("q", data)
-        return (0,)*len(self.arg_types)
+        data, = struct.unpack("q", data)
+        data = ctypes.string_at(data, self.arg_size*8)
+        pos = self.arg_size
+        res = []
+        for item in self.arg_types:
+            pos -= item.size
+            res.append(item.to_python(data[pos:pos+item.size]))
+        return tuple(res)
     def getattr___getitem__(self, bs): bs.flow.stack.append(tuplegetitemmeths[self.arg_types])
     def store(self):
         def _(bs):
@@ -822,12 +828,15 @@ class ProtoObject(_Type):
         _Type.__init__(self)
         self.name = name
         self.bases = bases
+        print bases
         self.dict = dict
         self.attrs = {}
         self.attr_setters = {}
         self.attrs2 = {}
         self.attr_setters2 = {}
         self.cfuncs = []
+    def __repr__(self):
+        return "ProtoObject" + repr((self.name, self.bases, self.dict))
     def __call__(self, arg_types):
         def _(bs):
             assert bs.flow.stack[-1 - len(arg_types)] is self
@@ -1982,6 +1991,7 @@ class Function(_Type):
             assert bs.flow.stack[-1 - len(arg_types)] is self, bs.flow.stack[-1 - len(arg_types)]
             arg_size = sum(x.size for x in arg_types)
             bs.code += isa.mov(registers.rax, MemRef(registers.rsp, 8*arg_size + 8))
+            bs.code += isa.push(registers.rax)
             
             def _(value):
                 def _(bs):
