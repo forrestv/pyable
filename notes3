@@ -4,7 +4,8 @@ how do you store an object (that could be of any type) in a binary container? (i
 
 right now we're going with 'the compiler knows the type at compile-time'
 
-oh right the invalidation
+invalidation
+	somehow use self modifying code to alter the relevant code when a type definition changes
 
 ----
 
@@ -20,7 +21,7 @@ pointer to:
     type number
     object data
 
-maybe optimize one/zero-tuple (or longer?)
+maybe optimize one/zero-tuple (or longer?) by inlining
 
 object
 
@@ -43,10 +44,6 @@ variable pros
 fixed pros
 - simpler
 - makes O(1) indexing possible and you can store more complex object type inline
-
---
-
-we need an actual unlift operator .. would be nice at least :p
 
 ---
 

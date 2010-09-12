@@ -6,7 +6,12 @@ import ctypes
 libc = ctypes.CDLL("libc.so.6")
 
 class object():
-    pass
+    def __init__(self):
+        pass
+    def __repr__(self):
+        return "<%s object>" % (self.__class__.__name__)
+    def __str__(self):
+        return self.__repr__(self)
 
 def abs(x):
     return x.__abs__()

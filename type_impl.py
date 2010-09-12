@@ -848,12 +848,10 @@ class ProtoObject(_Type):
             type = bs.flow.stack.pop()
             assert type is Function
             def handler(new_func, new_func2):
-                self.attrs[attr] = new_func
+                r = new_func, new_func2
+                self.attrs[attr] = r
                 for umr in self.attr_setters.get(attr, []):
-                    umr.replace(new_func)
-                self.attrs2[attr] = new_func2
-                for umr in self.attr_setters2.get(attr, []):
-                    umr.replace(new_func2)
+                    umr.replace(r)
             handler_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64, ctypes.c_int64)(handler)
             self.cfuncs.append(handler_cfunc)
             bs.code += isa.pop(registers.rsi)
