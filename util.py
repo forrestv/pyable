@@ -126,82 +126,21 @@ def called_from_asm(func):
 
 class UpdatableMovRax(object):
     def __init__(self, caller_code, initial):
-        self.value = initial
-        
         self.caller_program = caller_code.prgm
         self.caller_start = caller_code.prgm.get_unique_label()
         self.caller_end = caller_code.prgm.get_unique_label()
         caller_code += self.caller_start
-        caller_code += isa.mov(registers.rax, fake_int(self.value))
+        self.inst = isa.mov(registers.rax, fake_int(initial))
+        caller_code += self.inst
         caller_code += self.caller_end
     
     def replace(self, data):
+        self.inst.__dict__ = isa.mov(registers.rax, fake_int(data)).__dict__
+        if self.caller_program.render_code is None:
+            return
         assert list(self.caller_program.render_code[self.caller_start.position:self.caller_end.position]) == \
             list(get_mov_rax(self.value))
         self.caller_program.render_code[self.caller_start.position:self.caller_end.position] = get_mov_rax(data)
-        self.value = data
-
-class Redirection_old(object):
-    """
-    Inserts instructions into 'caller_code' that do:
-    
-    while True:
-        callback(<Redirection object>)
-    
-    while frobulating rax (and all other non-scratch registers, though this could be changed in the future).
-    
-    Offers a 'replace' method that replaces this with other code,
-    which must be a specific length. It is usually replaced with
-    a call or jmp from get_call and get_jmp.
-    """
-    
-    def __init__(self, caller_code, callback, take_arg=False):
-        self.callback2 = callback
-        self.take_arg = take_arg
-        
-        self.callback_cfunc = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_int64)(self.callback)
-        callback_addr = ctypes.cast(self.callback_cfunc, ctypes.c_void_p).value
-        
-        # we could hook on caller_program.compile and build this when the caller is compiled
-        # then we wouldn't have to fiddle with returning the jmp address
-        # but then we'd have to replace the reference in caller_program
-        # i suppose we could use Redirection.replace for that if we cleared the del junk out
-        self._program = BareProgram()
-        code = self._program.get_stream()
-        code += isa.mov(registers.rax, fake_int(callback_addr))
-        code += isa.call(registers.rax)
-        code += isa.jmp(registers.rax)
-        self._program.add(code)
-        self._program.cache_code()
-        
-        self.caller_program = caller_code.prgm
-        self.caller_start = caller_code.prgm.get_unique_label()
-        self.caller_end = caller_code.prgm.get_unique_label()
-        caller_code += self.caller_start
-        caller_code += isa.mov(registers.rax, fake_int(self._program.inst_addr()))
-        caller_code += isa.jmp(registers.rax)
-        caller_code += self.caller_end
-        
-        self.caller_program.references.append(self)
-    
-    @called_from_asm
-    def callback(self, data):
-        if self.take_arg:
-            self.callback2(self, data)
-        else:
-            self.callback2(self)
-        if hasattr(self, "jmp_addr"):
-            return self.jmp_addr
-        return self.caller_program.inst_addr() + self.caller_start.position
-    
-    def replace(self, data):
-        assert list(self.caller_program.render_code[self.caller_start.position:self.caller_end.position]) == \
-            list(get_jmp(self._program.inst_addr()))
-        self.caller_program.render_code[self.caller_start.position:self.caller_end.position] = data
-        self.caller_program.references.remove(self)
-        self.jmp_addr = self.caller_program.inst_addr() + self.caller_start.position
-        del self.caller_program, self.caller_start, self.caller_end
-        del self._program, self.callback_cfunc, self.callback2
 
 patch_len = len(get_jmp(0))
 

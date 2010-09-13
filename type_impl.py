@@ -827,15 +827,16 @@ class ProtoObject(_Type):
     def __init__(self, name, bases, dict):
         _Type.__init__(self)
         self.name = name
-        self.bases = bases
-        print bases
+        self.bases = list(bases)
+        #print bases
         self.dict = dict
         self.attrs = {}
         self.attr_setters = {}
-        self.attrs2 = {}
-        self.attr_setters2 = {}
         self.cfuncs = []
+        import C3
+        self.mro = C3.merge([[self]] + [x.mro for x in self.bases] + [self.bases])
     def __repr__(self):
+        return self.name
         return "ProtoObject" + repr((self.name, self.bases, self.dict))
     def __call__(self, arg_types):
         def _(bs):
@@ -851,7 +852,7 @@ class ProtoObject(_Type):
                 r = new_func, new_func2
                 self.attrs[attr] = r
                 for umr in self.attr_setters.get(attr, []):
-                    umr.replace(r)
+                    umr(r)
             handler_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64, ctypes.c_int64)(handler)
             self.cfuncs.append(handler_cfunc)
             bs.code += isa.pop(registers.rsi)
@@ -1108,11 +1109,26 @@ class ProtoInstance(_Type):
             bs.code += isa.push(registers.r12)
             bs.flow.stack.append(self)
             
-            self.type.attr_setters.setdefault('__init__', []).append(util.UpdatableMovRax(bs.code, self.type.attrs.get('__init__', say_functions[self.type.name, '__init__'])))
+            func1 = util.UpdatableMovRax(bs.code, 0)
             bs.code += isa.push(registers.rax)
-            self.type.attr_setters2.setdefault('__init__', []).append(util.UpdatableMovRax(bs.code, self.type.attrs2.get('__init__', say_functions[self.type.name, '__init__'])))
+            func2 = util.UpdatableMovRax(bs.code, 0)
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Function)
+            
+            def func_changed(*args):
+                for i in self.type.mro:
+                    if '__init__' in i.attrs:
+                        new = i.attrs['__init__']
+                        break
+                else:
+                    new = (say_functions[self.type.name, '__init__'], 0)
+                func1.replace(new[0])
+                func2.replace(new[1])
+            
+            for i in self.type.mro:
+                i.attr_setters.setdefault('__init__', []).append(func_changed)
+            
+            func_changed()
             
             bs.code += isa.push(registers.r12)
             bs.flow.stack.append(self)
@@ -1229,11 +1245,26 @@ class ProtoInstance(_Type):
                             bs.code += isa.push(MemRef(registers.r14, 8 * (pos + i)))
                         bs.flow.stack.append(type)
                     else:
-                        self.type.attr_setters.setdefault(attr, []).append(util.UpdatableMovRax(bs.code, self.type.attrs.get(attr, say_functions[self.type.name, attr])))
+                        func1 = util.UpdatableMovRax(bs.code, 0)
                         bs.code += isa.push(registers.rax)
-                        self.type.attr_setters2.setdefault(attr, []).append(util.UpdatableMovRax(bs.code, self.type.attrs2.get(attr, say_functions[self.type.name, attr])))
+                        func2 = util.UpdatableMovRax(bs.code, 0)
                         bs.code += isa.push(registers.rax)
                         bs.flow.stack.append(Function)
+                        
+                        def func_changed(*args):
+                            for i in self.type.mro:
+                                if attr in i.attrs:
+                                    new = i.attrs[attr]
+                                    break
+                            else:
+                                new = (say_functions[self.type.name, attr], 0)
+                            func1.replace(new[0])
+                            func2.replace(new[1])
+                        
+                        for i in self.type.mro:
+                            i.attr_setters.setdefault(attr, []).append(func_changed)
+                        
+                        func_changed()
                         
                         assert bs.flow.stack[-1] is Function
                         

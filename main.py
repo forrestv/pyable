@@ -16,7 +16,7 @@ import util
 import type_impl
 import compiler
 
-if sys.argv[1] == "--debug":
+if sys.argv[1:] and sys.argv[1] == "--debug":
     util.DEBUG = 1
     sys.argv[1:] = sys.argv[2:]
 

@@ -980,7 +980,7 @@ def translate(desc, flow, stack=None, this=None):
             bs.this.append(t.test)
             @bs.this.append
             def _(bs, t=t, skip=skip):
-                assert bs.flow.stack.pop() is type_impl.Int
+                assert bs.flow.stack.pop() in (type_impl.Int, type_impl.Bool)
                 bs.code += isa.pop(registers.rax)
                 bs.code += isa.test(registers.rax, registers.rax)
                 bs.code += isa.jnz(skip)

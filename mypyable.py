@@ -279,10 +279,23 @@ class ArgGetterGetItem(type_impl._Type):
         return _
 
 @apply
+class ArgGetterLen(type_impl._Type):
+    size = 0
+    def __call__(self, arg_types):
+        assert arg_types == ()
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            import sys
+            bs.this.append(type_impl.Int.load_constant(len(sys.argv[1:])))
+        return _
+
+@apply
 class ArgGetter(type_impl._Type):
     size = 0
     def getattr___getitem__(self, bs):
         bs.flow.stack.append(ArgGetterGetItem)
+    def getattr___len__(self, bs):
+        bs.flow.stack.append(ArgGetterLen)
 
 @apply
 class PyableModule(type_impl._Type):

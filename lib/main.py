@@ -123,6 +123,16 @@ class file(object):
         #actual = libc.fread(res, 1, size, self._file)
         #print "b"
         #return res.raw[:actual]
+    def readline(self):
+        def _():
+            while True:
+                c = self.read(1)
+                if not c:
+                    return
+                yield c
+                if c == "\n":
+                    return
+        return ''.join(_())
 
     def write(self, data):
         libc.fwrite(self._file, 1, len(data), data)
@@ -331,9 +341,18 @@ def len(o):
 def eval(s):
     return _pyable.eval(s)
 
-a = _pyable.args[0]
+stdin = open("<stdin>")
 
-exec open(a).read()
+def raw_input():
+    return stdin.readline()
+
+if len(_pyable.args):
+    a = _pyable.args[0]
+
+    exec open(a).read()
+else:
+    while True:
+        exec raw_input()
 
 if 0:
     import random
