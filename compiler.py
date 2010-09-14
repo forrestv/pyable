@@ -102,6 +102,7 @@ class Flow(object):
         self.ctrl_stack = []
         self.allocd_locals = False
         self.class_stack = []
+        self.try_stack = []
     
     def __repr__(self):
         return "Flow<%r>" % self.__dict__
@@ -947,6 +948,9 @@ def translate(desc, flow, stack=None, this=None):
             
             bs.this.append(None)
         elif isinstance(t, ast.Raise):
+            # type
+            # inst
+            # tback
             if t.value is None:
                 bs.this.append(ast.Name(id='None', ctx=ast.Load()))
             else:
@@ -1126,6 +1130,31 @@ def translate(desc, flow, stack=None, this=None):
                         bs.this.append(tree.body)
                     return _
                 util.unlift_noncached(bs, exec_it, "exec")
+        elif isinstance(t, ast.TryFinally):
+            @bs.this.append
+            def _(bs, t=t):
+                @bs.flow.try_stack.append
+                def _(bs):
+                    bs.this.append(t.finalbody)
+                    # should continue stepping ...
+            bs.this.append(t.body)
+            @bs.this.append
+            def _(bs, t=t):
+                bs.flow.try_stack.pop()
+            bs.this.append(t.finalbody)
+        elif isinstance(t, ast.TryExcept):
+            @bs.this.append
+            def _(bs, t=t):
+                @bs.flow.try_stack.append
+                def _(bs):
+                    bs.this.append(XXX)
+                    # should continue stepping ...
+            bs.this.append(t.body)
+            @bs.this.append
+            def _(bs, t=t):
+                bs.flow.try_stack.pop()
+            bs.this.append(t.orelse)
+            # jump here
         else:
             assert False, util.dump(t)
         bs.call_stack.extend(reversed(bs.this))

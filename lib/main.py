@@ -241,7 +241,6 @@ class module(object):
 
 def __import__(name):
     exec open(a).read()
-    aa
 
 class listiterator():
     def __init__(self, parent):
