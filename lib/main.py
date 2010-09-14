@@ -240,6 +240,7 @@ class module(object):
     pass
 
 def __import__(name):
+    exec open(a).read()
     aa
 
 class listiterator():
@@ -342,6 +343,9 @@ def eval(s):
     return _pyable.eval(s)
 
 stdin = open("<stdin>")
+
+class Exception(object):
+    pass
 
 def raw_input():
     return stdin.readline()

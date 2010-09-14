@@ -126,21 +126,25 @@ def called_from_asm(func):
 
 class UpdatableMovRax(object):
     def __init__(self, caller_code, initial):
+        self.value = initial
+        
         self.caller_program = caller_code.prgm
         self.caller_start = caller_code.prgm.get_unique_label()
         self.caller_end = caller_code.prgm.get_unique_label()
         caller_code += self.caller_start
-        self.inst = isa.mov(registers.rax, fake_int(initial))
+        self.inst = isa.mov(registers.rax, fake_int(self.value))
         caller_code += self.inst
         caller_code += self.caller_end
     
     def replace(self, data):
         self.inst.__dict__ = isa.mov(registers.rax, fake_int(data)).__dict__
         if self.caller_program.render_code is None:
+            self.value = data
             return
         assert list(self.caller_program.render_code[self.caller_start.position:self.caller_end.position]) == \
             list(get_mov_rax(self.value))
-        self.caller_program.render_code[self.caller_start.position:self.caller_end.position] = get_mov_rax(data)
+        self.value = data
+        self.caller_program.render_code[self.caller_start.position:self.caller_end.position] = get_mov_rax(self.value)
 
 patch_len = len(get_jmp(0))
 
