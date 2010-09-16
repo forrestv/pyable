@@ -1,7 +1,6 @@
-#class Exception(object):
-#    pass
-
 class ValueError(Exception):
     pass
 
-raise ValueError
+raise ValueError()
+
+print "you should not see this :<"

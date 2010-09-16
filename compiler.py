@@ -87,6 +87,32 @@ class NonGenerator(Executable):
                 targets=[ast.Name(id=t.id, ctx=ast.Store())],
                 value=v,
             ))
+        @this.append
+        def _(bs):
+            @bs.flow.try_stack.append
+            def _(bs):
+                @bs.this.append
+                def _(bs):
+                    type = bs.flow.stack.pop()
+                    
+                    if type.size >= 1:
+                        bs.code += isa.pop(registers.r13)
+                    if type.size >= 2:
+                        bs.code += isa.pop(registers.r14)
+                    if type.size >= 3:
+                        assert False
+                    
+                    bs.code += isa.mov(registers.r12, ~type.id)
+                    
+                    # leave
+                    bs.code += isa.mov(registers.rsp, registers.rbp)
+                    bs.code += isa.pop(registers.rbp)
+                    
+                    assert not bs.flow.stack, bs.flow.stack
+                    
+                    bs.code += isa.ret() # return address
+                
+                bs.this.append(None)
         return this
 
 #class Generator(object):
@@ -143,6 +169,7 @@ class Flow(object):
         r.ctrl_stack[:] = self.ctrl_stack
         r.allocd_locals = self.allocd_locals
         r.class_stack[:] = self.class_stack
+        r.try_stack[:] = self.try_stack
         return r
 
 class FrozenFlow(object):
@@ -951,32 +978,12 @@ def translate(desc, flow, stack=None, this=None):
             # type
             # inst
             # tback
-            if t.value is None:
-                bs.this.append(ast.Name(id='None', ctx=ast.Load()))
-            else:
-                bs.this.append(t.value)
+            assert t.inst is None
+            assert t.tback is None
+            bs.this.append(t.type)
             @bs.this.append
             def _(bs):
-                type = bs.flow.stack.pop()
-                
-                if type.size >= 1:
-                    bs.code += isa.pop(registers.r13)
-                if type.size >= 2:
-                    bs.code += isa.pop(registers.r14)
-                if type.size >= 3:
-                    assert False
-                
-                bs.code += isa.mov(registers.r12, type.id)
-                
-                # leave
-                bs.code += isa.mov(registers.rsp, registers.rbp)
-                bs.code += isa.pop(registers.rbp)
-                
-                assert not bs.flow.stack, bs.flow.stack
-                
-                bs.code += isa.ret() # return address
-            
-            bs.this.append(None)
+                bs.flow.try_stack.pop()(bs)
         elif isinstance(t, ast.Pass):
             pass # haha
         elif isinstance(t, ast.Assert):
@@ -1131,30 +1138,57 @@ def translate(desc, flow, stack=None, this=None):
                     return _
                 util.unlift_noncached(bs, exec_it, "exec")
         elif isinstance(t, ast.TryFinally):
-            @bs.this.append
-            def _(bs, t=t):
-                @bs.flow.try_stack.append
-                def _(bs):
-                    bs.this.append(t.finalbody)
-                    # should continue stepping ...
+            @bs.flow.try_stack.append
+            def _(bs, call_stack=list(bs.call_stack), flow=bs.flow.clone(), t=t):
+                # HACK, i don't want to think about the things this breaks
+                bs.call_stack[:] = call_stack
+                bs.flow.ctrl_stack[:] = flow.ctrl_stack
+                assert bs.flow.try_stack == flow.try_stack
+                
+                bs.this = []
+                bs.this.append(t.finalbody)
             bs.this.append(t.body)
             @bs.this.append
             def _(bs, t=t):
                 bs.flow.try_stack.pop()
             bs.this.append(t.finalbody)
         elif isinstance(t, ast.TryExcept):
-            @bs.this.append
-            def _(bs, t=t):
-                @bs.flow.try_stack.append
-                def _(bs):
-                    bs.this.append(XXX)
-                    # should continue stepping ...
+            @bs.flow.try_stack.append
+            def _(bs, t=t, call_stack=list(bs.call_stack), flow=bs.flow.clone()):
+                for handler in t.handlers:
+                    assert isinstance(handler, ast.ExceptHandler)
+                    if handler.type is not None:
+                        bs.this.append(handler.type)
+                    @bs.this.append
+                    def _(bs, handler=handler):
+                        if handler.type is None:
+                            catch_type = None
+                        else:
+                            catch_type = bs.flow.stack.pop()
+                            for i in xrange(catch_type.size):
+                                bs.code += isa.pop(registers.rax)
+                        exc_type = bs.flow.stack[-1]
+                        if catch_type.isinstance(exc_type) or catch_type is None:
+                            # HACK, i don't want to think about the things this breaks
+                            bs.call_stack[:] = call_stack
+                            bs.flow.ctrl_stack[:] = flow.ctrl_stack
+                            assert bs.flow.try_stack == flow.try_stack
+                            
+                            bs.this = []
+                            
+                            if handler.name is None:
+                                bs.flow.stack.pop()
+                                for i in xrange(exc_type.size):
+                                    bs.code += isa.pop(registers.rax)
+                            else:
+                                bs.this.append(handler.name)
+                            
+                            bs.this.append(handler.body)
             bs.this.append(t.body)
             @bs.this.append
-            def _(bs, t=t):
+            def _(bs):
                 bs.flow.try_stack.pop()
             bs.this.append(t.orelse)
-            # jump here
         else:
             assert False, util.dump(t)
         bs.call_stack.extend(reversed(bs.this))

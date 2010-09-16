@@ -9,9 +9,9 @@ class object():
     def __init__(self):
         pass
     def __repr__(self):
-        return "<%s object>" % (self.__class__.__name__)
+        return "<%s object>" % (self.__class__.__name__,)
     def __str__(self):
-        return self.__repr__(self)
+        return self.__repr__()
 
 def abs(x):
     return x.__abs__()
@@ -242,7 +242,7 @@ class module(object):
 def __import__(name):
     exec open(a).read()
 
-class listiterator():
+class listiterator(object):
     def __init__(self, parent):
         self.parent = parent
         self.pos = 0
@@ -346,13 +346,18 @@ stdin = open("<stdin>")
 class Exception(object):
     pass
 
+def input():
+    return eval(raw_input())
+
 def raw_input():
     return stdin.readline()
 
 if len(_pyable.args):
     a = _pyable.args[0]
-
-    exec open(a).read()
+    try:
+        exec open(a).read()
+    except Exception, e:
+        print "error! D:", e
 else:
     while True:
         exec raw_input()

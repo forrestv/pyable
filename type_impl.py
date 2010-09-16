@@ -843,6 +843,10 @@ class ProtoObject(_Type):
             assert bs.flow.stack[-1 - len(arg_types)] is self
             bs.this.append(protoinstances[self].new(arg_types))
         return _
+    def issubclass(self, other):
+        return self in other.mro
+    def isinstance(self, other):
+        return self in other.type.mro
     def setattr_const_string(self, attr):
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -2039,7 +2043,10 @@ class Function(_Type):
                         bs.code += isa.pop(registers.rax)
                         bs.code += isa.push(registers.r12) # unlift return type
                         def _(value):
-                            def _(bs):
+                            def _(bs, value=value):
+                                exc = value < 0
+                                if exc:
+                                    value = ~value
                                 bs.flow.stack.append(id_to_type[value])
                                 if bs.flow.stack[-1].size >= 1:
                                     bs.code += isa.push(registers.r13)
@@ -2047,6 +2054,8 @@ class Function(_Type):
                                     bs.code += isa.push(registers.r14)
                                 if bs.flow.stack[-1].size >= 3:
                                     assert False
+                                if exc:
+                                    bs.flow.try_stack.pop()(bs)
                             return _
                         util.unlift(bs, _, "_Function.__call__ (inner)")
                 return _
