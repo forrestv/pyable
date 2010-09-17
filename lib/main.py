@@ -9,7 +9,8 @@ class object():
     def __init__(self):
         pass
     def __repr__(self):
-        return "<%s object>" % (self.__class__.__name__,)
+        return "<" + self.__class__.__name__ + " object>"
+        #return "<%s object>" % (self.__class__.__name__,)
     def __str__(self):
         return self.__repr__()
 
@@ -273,7 +274,7 @@ def ord(i):
     return i.__ord__()
 
 
-class list():
+class list(object):
     def __init__(self, iterable=None):
         self._used = 0
         self._allocated = 0
@@ -283,7 +284,7 @@ class list():
     def __len__(self):
         return self._used
     def __iter__(self):
-        return self._used
+        return listiterator(self)
     def _grow(self):
         new_allocated = self._allocated * 2 + 1
         import _pyable
@@ -345,6 +346,10 @@ stdin = open("<stdin>")
 
 class Exception(object):
     pass
+
+class StopIteration(Exception):
+    pass
+_pyable.set_StopIteration_impl(StopIteration)
 
 def input():
     return eval(raw_input())

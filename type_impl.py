@@ -867,6 +867,8 @@ class ProtoObject(_Type):
             bs.code += isa.call(registers.rax)
             bs.code += isa.mov(registers.rsp, registers.r12)
         return _
+    def getattr___name__(self, bs):
+        bs.this.append(Str.load_constant(self.name))
 
 name_bits = util.cdict(lambda name: 1 << random.randrange(64))
 
@@ -1891,6 +1893,12 @@ class _StrCmpMeth(_Type):
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.rsi)
             
+            end = bs.program.get_unique_label()
+            
+            bs.code += isa.cmp(registers.rsi, registers.rdi)
+            bs.code += isa.mov(registers.rax, self.op_name in ('eq', 'le', 'ge'))
+            bs.code += isa.je(end)
+            
             skip = bs.program.get_unique_label()
             bs.code += isa.test(registers.rsi, 1)
             bs.code += isa.jz(skip)
@@ -1918,8 +1926,6 @@ class _StrCmpMeth(_Type):
             bs.code += isa.mov(registers.rdi, registers.rsp)
             bs.code += isa.sub(registers.rdi, 32)
             bs.code += skip
-            
-            end = bs.program.get_unique_label()
             
             bs.code += isa.mov(registers.rcx, MemRef(registers.rsi))
             bs.code += isa.cmp(registers.rcx, MemRef(registers.rdi))
@@ -1961,6 +1967,114 @@ class _StrCmpMeth(_Type):
 StrCmpMeths = util.cdict(_StrCmpMeth)
 
 @apply
+class StrAddMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert arg_types == (Str,)
+        def _(bs):
+            assert bs.flow.stack.pop() is Str
+            bs.code += isa.pop(registers.rsi)
+            
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rdi)
+            
+            # r10 len 1
+            # r11 pointer 1
+            # r12 len 2
+            # r13 pointer 2
+            
+            bs.code += isa.sub(registers.rsp, 16)
+            
+            skip = bs.program.get_unique_label()
+            end = bs.program.get_unique_label()
+            bs.code += isa.test(registers.rdi, 1)
+            bs.code += isa.jnz(skip)
+            # normal string
+            bs.code += isa.mov(registers.r10, MemRef(registers.rdi))
+            bs.code += isa.lea(registers.r11, MemRef(registers.rdi, 8, data_size=None))
+            bs.code += isa.jmp(end)
+            bs.code += skip
+            # short string
+            bs.code += isa.mov(registers.r10, registers.rdi)
+            bs.code += isa.shr(registers.r10, 1)
+            bs.code += isa.and_(registers.r10, 7)
+            bs.code += isa.mov(MemRef(registers.rsp, 8), registers.rdi)
+            bs.code += isa.lea(registers.r11, MemRef(registers.rsp, 9, data_size=None))
+            bs.code += end
+            
+            skip = bs.program.get_unique_label()
+            end = bs.program.get_unique_label()
+            bs.code += isa.test(registers.rsi, 1)
+            bs.code += isa.jnz(skip)
+            # normal string
+            bs.code += isa.mov(registers.r12, MemRef(registers.rsi))
+            bs.code += isa.lea(registers.r13, MemRef(registers.rsi, 8, data_size=None))
+            bs.code += isa.jmp(end)
+            bs.code += skip
+            # short string
+            bs.code += isa.mov(registers.r12, registers.rsi)
+            bs.code += isa.shr(registers.r12, 1)
+            bs.code += isa.and_(registers.r12, 7)
+            bs.code += isa.mov(MemRef(registers.rsp, 0), registers.rsi)
+            bs.code += isa.lea(registers.r13, MemRef(registers.rsp, 1, data_size=None))
+            bs.code += end
+            
+            end = bs.program.get_unique_label()
+            skip = bs.program.get_unique_label()
+            
+            # r14 total length
+            
+            bs.code += isa.mov(registers.r14, registers.r10)
+            bs.code += isa.add(registers.r14, registers.r12)
+            bs.code += isa.cmp(registers.r14, 7)
+            bs.code += isa.jle(skip)
+            # long
+            #bs.code += isa.ud2()
+            bs.code += isa.lea(registers.rdi, MemRef(registers.r14, 8, data_size=None))
+            bs.code += isa.mov(registers.rax, util.malloc_addr)
+            bs.code += isa.push(registers.r10)
+            bs.code += isa.push(registers.r11)
+            bs.code += isa.call(registers.rax)
+            bs.code += isa.pop(registers.r11)
+            bs.code += isa.pop(registers.r10)
+            bs.code += isa.mov(MemRef(registers.rax), registers.r14)
+            bs.code += isa.mov(registers.rcx, registers.r10)
+            bs.code += isa.mov(registers.rsi, registers.r11)
+            bs.code += isa.lea(registers.rdi, MemRef(registers.rax, 8, data_size=None))
+            bs.code += isa.rep()
+            bs.code += isa.movsb()
+            bs.code += isa.mov(registers.rcx, registers.r12)
+            bs.code += isa.mov(registers.rsi, registers.r13)
+            bs.code += isa.lea(registers.rdi, MemRef(registers.rax, 8, registers.r10, data_size=None))
+            bs.code += isa.rep()
+            bs.code += isa.movsb()
+            
+            bs.code += isa.jmp(end)
+            bs.code += skip
+            # short
+            #bs.code += isa.ud2()
+            bs.code += isa.mov(registers.rax, registers.r14)
+            bs.code += isa.mov(registers.rdx, 0)
+            bs.code += isa.mov(registers.r14, 2**48 - 1)
+            bs.code += isa.lea(registers.rcx, MemRef(registers.rdx, 8, index=registers.r10, scale=8, data_size=None))
+            bs.code += isa.shl(registers.rax, 1)
+            bs.code += isa.or_(registers.rax, 1)
+            bs.code += isa.mov(registers.rbx, MemRef(registers.r11))
+            bs.code += isa.and_(registers.rbx, registers.r14)
+            bs.code += isa.shl(registers.rbx, 8)
+            bs.code += isa.or_(registers.rax, registers.rbx)
+            bs.code += isa.mov(registers.rbx, MemRef(registers.r13))
+            bs.code += isa.and_(registers.rbx, registers.r14)
+            bs.code += isa.shl(registers.rbx, registers.cl)
+            bs.code += isa.or_(registers.rax, registers.rbx)
+            
+            bs.code += end
+            bs.code += isa.add(registers.rsp, 16)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Str)
+        return _
+
+@apply
 class Str(_Type):
     size = 1
     def load_constant(self, s):
@@ -1996,6 +2110,7 @@ class Str(_Type):
     def getattr___le__(self, bs): bs.flow.stack.append(StrCmpMeths['le'])
     def getattr___eq__(self, bs): bs.flow.stack.append(StrCmpMeths['eq'])
     def getattr___ne__(self, bs): bs.flow.stack.append(StrCmpMeths['ne'])
+    def getattr___add__(self, bs): bs.flow.stack.append(StrAddMeth)
 
 functions = []
 
@@ -2061,6 +2176,16 @@ class Function(_Type):
                 return _
             util.unlift(bs, _, "_Function.__call__")
         return _
+
+@apply
+class GeneratorNext(_Type):
+    size = 1
+
+@apply
+class Generator(_Type):
+    size = 1
+    def getattr_next(self, bs):
+        bs.flow.stack.append(GeneratorNext)
 
 class _Method(_Type):
     def __init__(self, self_type):

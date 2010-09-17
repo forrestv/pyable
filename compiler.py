@@ -1015,7 +1015,6 @@ def translate(desc, flow, stack=None, this=None):
                     keywords=[],
                     starargs=None,
                     kwargs=None,
-                    name="list",
                     ),
                 )
             for e in t.elts:
@@ -1189,6 +1188,87 @@ def translate(desc, flow, stack=None, this=None):
             def _(bs):
                 bs.flow.try_stack.pop()
             bs.this.append(t.orelse)
+        elif isinstance(t, ast.For):
+            bs.this.append(
+                ast.Call(
+                    func=ast.Attribute(
+                        value=t.iter,
+                        attr='__iter__',
+                        ctx=ast.Load(),
+                        ),
+                    args=[],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                    ),
+                )
+            @util.memoize
+            def make_a(flow, t=t):
+                def _(bs):
+                    @bs.flow.try_stack.append
+                    def _(bs):
+                        import mypyable
+                        if mypyable.StopIteration_impl.isinstance(bs.flow.stack[-1]):
+                            type = bs.flow.stack.pop()
+                            for i in xrange(type.size):
+                                bs.code += isa.pop(registers.rax)
+                            util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c(bs.flow)))
+                            bs.this.append(None)
+                        else:
+                            assert False, (bs.flow.stack[-1], mypyable.StopIteration_impl)
+                    bs.this.append(
+                        ast.Assign(
+                            targets=[t.target],
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=util.dup,
+                                    attr='next',
+                                    ctx=ast.Load(),
+                                    ),
+                                args=[],
+                                keywords=[],
+                                starargs=None,
+                                kwargs=None,
+                                ),
+                            )
+                        )
+                    @bs.this.append
+                    def _(bs):
+                        bs.flow.try_stack.pop()
+                    bs.this.append(t.body)
+                    @bs.this.append
+                    def _(bs):
+                        util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_a(bs.flow)))
+                        bs.this.append(None)
+                
+                return translate("while_a", flow, this=[
+                    _,
+                    None,
+                ])
+            
+            number = random.randrange(1000)
+            
+            @util.memoize
+            def make_c(flow, stack=list(bs.call_stack), number=number):
+                def _(bs):
+                    type = bs.flow.stack.pop()
+                    for i in xrange(type.size):
+                        bs.code += isa.pop(registers.rax)
+                    removed = bs.flow.ctrl_stack.pop()
+                    assert removed[2] == number
+                return translate("while_c", flow, stack=stack, this=[
+                    _,
+                ])
+            
+            @bs.this.append
+            def _(bs):
+                bs.flow.ctrl_stack.append([
+                    lambda bs, flow=bs.flow, make_a=make_a: (util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_a(flow))), bs.this.append(None)), # continue
+                    lambda bs, flow=bs.flow, make_c=make_c: (util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c(flow))), bs.this.append(None)), # break
+                    number, # used for sanity check while avoiding circular reference
+                ])
+                
+                bs.this.append(bs.flow.ctrl_stack[-1][0]) # continue
         else:
             assert False, util.dump(t)
         bs.call_stack.extend(reversed(bs.this))
