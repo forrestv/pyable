@@ -125,18 +125,33 @@ class file(object):
         #print "b"
         #return res.raw[:actual]
     def readline(self):
-        def _():
-            while True:
-                c = self.read(1)
-                if not c:
-                    return
-                yield c
-                if c == "\n":
-                    return
-        return ''.join(_())
+        #def _():
+        #    while True:
+        #        c = self.read(1)
+        #        if not c:
+        #            return
+        #        yield c
+        #        if c == "\n":
+        #            return
+        #return ''.join(_())
+        r = ""
+        while True:
+            c = libc.fgetc(self._file)
+            if c == 4294967295:
+                return r
+            c = chr(c)
+            r += c
+            if c == '\n':
+                return r
 
     def write(self, data):
-        libc.fwrite(self._file, 1, len(data), data)
+        libc.fwrite(data, 1, len(data), self._file)
+    def flush(self):
+        libc.fflush(self._file)
+
+class file_from_fileno(file):
+    def __init__(self, fileno, mode):
+        self._file = libc.fdopen(fileno, mode)
 
 def filter(function, iterable):
     if function is None:
@@ -342,7 +357,9 @@ def len(o):
 def eval(s):
     return _pyable.eval(s)
 
-stdin = open("<stdin>")
+stdin = file_from_fileno(0, 'r')
+stdout = file_from_fileno(1, 'w')
+stderr = file_from_fileno(2, 'w')
 
 class Exception(object):
     pass
@@ -354,7 +371,10 @@ _pyable.set_StopIteration_impl(StopIteration)
 def input():
     return eval(raw_input())
 
-def raw_input():
+def raw_input(prompt=None):
+    if prompt is not None:
+        stdout.write(prompt)
+        stdout.flush()
     return stdin.readline()
 
 if len(_pyable.args):
@@ -365,7 +385,10 @@ if len(_pyable.args):
         print "error! D:", e
 else:
     while True:
-        exec raw_input()
+        try:
+            exec raw_input(">>> ")
+        except Exception, e:
+            print "error! D:", e
 
 if 0:
     import random

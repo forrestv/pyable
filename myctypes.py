@@ -22,16 +22,18 @@ class _FuncPtr(type_impl._Type):
         self.func = cdll[name]
     def __call__(self, arg_types):
         def _(bs):
-            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str or x is Raw or x in _FuncPtr])
+            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str or x is Raw or isinstance(x, _FuncPtr)])
             floats = len([x for x in arg_types if x is type_impl.Float])
+            floats_orig = floats
             pos = 0
-            for arg_type in arg_types:
+            for arg_type in reversed(arg_types):
                 type = bs.flow.stack.pop()
+                assert arg_type is type, (type, arg_type)
                 if type is type_impl.Int:
                     ints -= 1
                     bs.code += isa.mov(int_regs[ints], MemRef(registers.rsp, pos))
                     pos += 8
-                elif type is _FuncPtr:
+                elif isinstance(type, _FuncPtr):
                     ints -= 1
                     bs.code += isa.mov(int_regs[ints], MemRef(registers.rsp, pos))
                     pos += 8
@@ -47,7 +49,6 @@ class _FuncPtr(type_impl._Type):
                 elif type is type_impl.Str:
                     ints -= 1
                     bs.code += isa.mov(int_regs[ints], MemRef(registers.rsp, pos))
-                    pos += 8
                     bs.code += isa.test(int_regs[ints], 1)
                     short = bs.program.get_unique_label()
                     end = bs.program.get_unique_label()
@@ -57,16 +58,18 @@ class _FuncPtr(type_impl._Type):
                     bs.code += isa.jmp(end)
                     bs.code += short
                     # short
-                    bs.code += isa.shr(MemRef(registers.rsp), 8)
-                    bs.code += isa.lea(int_regs[ints], MemRef(registers.rsp, pos - 8, data_size=None))
+                    bs.code += isa.shr(MemRef(registers.rsp, pos), 8)
+                    bs.code += isa.lea(int_regs[ints], MemRef(registers.rsp, pos, data_size=None))
                     bs.code += end
+                    pos += 8
                 else:
                     assert False, type
             assert bs.flow.stack.pop() is self
-            bs.code += isa.mov(registers.rax, ctypes.cast(self.func, ctypes.c_void_p).value)
+            bs.code += isa.mov(registers.rbx, ctypes.cast(self.func, ctypes.c_void_p).value)
             bs.code += isa.mov(registers.r12, registers.rsp)
             bs.code += isa.and_(registers.rsp, -16)
-            bs.code += isa.call(registers.rax)
+            bs.code += isa.mov(registers.rax, floats)
+            bs.code += isa.call(registers.rbx)
             bs.code += isa.mov(registers.rsp, registers.r12)
             bs.code += isa.add(registers.rsp, pos)
             bs.code += isa.push(registers.rax)

@@ -152,11 +152,12 @@ class IntStrMeth(_Type):
             
             
             # add small string test/create here
+            # fix other str producing functions to add NUL at end
             
             
             
             bs.code += isa.push(registers.r12)
-            bs.code += isa.add(registers.r12, 8)
+            bs.code += isa.add(registers.r12, 9)
             
             bs.code += isa.mov(registers.r13, registers.rsp)
             
@@ -165,6 +166,8 @@ class IntStrMeth(_Type):
             bs.code += isa.mov(registers.rdi, registers.r12)
             bs.code += isa.mov(registers.rax, util.malloc_addr)
             bs.code += isa.call(registers.rax)
+            
+            bs.code += isa.mov(MemRef(registers.rax, 1, registers.r12), 0)
             
             bs.code += isa.mov(registers.rdi, registers.rax)
             bs.code += isa.mov(registers.rsi, registers.r13)
