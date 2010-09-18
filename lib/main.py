@@ -384,6 +384,8 @@ if len(_pyable.args):
     except Exception, e:
         print "error! D:", e
 else:
+    print "pyAble SVN"
+    print "Be careful!"
     while True:
         try:
             exec raw_input(">>> ")
