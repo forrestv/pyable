@@ -27,3 +27,5 @@ for item, a, b in tests:
         print
         print b
         print
+        print
+        print

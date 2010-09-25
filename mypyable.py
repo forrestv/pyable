@@ -249,13 +249,48 @@ class SetListImpl(_PythonFunction):
         return type_impl.NoneType
 
 StopIteration_impl = None
-
 @apply
 class SetStopIterationImpl(_PythonFunction):
     def handler(self, new):
         global StopIteration_impl
         assert StopIteration_impl is None, "StopIteration_impl can only be set once"
         StopIteration_impl = new
+        return type_impl.NoneType
+
+SyntaxError_impl = None
+@apply
+class SetSyntaxErrorImpl(_PythonFunction):
+    def handler(self, new):
+        global SyntaxError_impl
+        assert SyntaxError_impl is None, "SyntaxError_impl can only be set once"
+        SyntaxError_impl = new
+        return type_impl.NoneType
+
+NameError_impl = None
+@apply
+class SetNameErrorImpl(_PythonFunction):
+    def handler(self, new):
+        global NameError_impl
+        assert NameError_impl is None, "NameError_impl can only be set once"
+        NameError_impl = new
+        return type_impl.NoneType
+
+AssertionError_impl = None
+@apply
+class SetAssertionErrorImpl(_PythonFunction):
+    def handler(self, new):
+        global AssertionError_impl
+        assert AssertionError_impl is None, "AssertionError_impl can only be set once"
+        AssertionError_impl = new
+        return type_impl.NoneType
+
+AttributeError_impl = None
+@apply
+class SetAttributeErrorImpl(_PythonFunction):
+    def handler(self, new):
+        global AttributeError_impl
+        assert AttributeError_impl is None, "AttributeError_impl can only be set once"
+        AttributeError_impl = new
         return type_impl.NoneType
 
 @apply
@@ -307,6 +342,10 @@ class PyableModule(type_impl._Type):
     def getattr_raw(self, bs): bs.flow.stack.append(RawType)
     def getattr_set_list_impl(self, bs): bs.flow.stack.append(SetListImpl)
     def getattr_set_StopIteration_impl(self, bs): bs.flow.stack.append(SetStopIterationImpl)
+    def getattr_set_SyntaxError_impl(self, bs): bs.flow.stack.append(SetSyntaxErrorImpl)
+    def getattr_set_NameError_impl(self, bs): bs.flow.stack.append(SetNameErrorImpl)
+    def getattr_set_AssertionError_impl(self, bs): bs.flow.stack.append(SetAssertionErrorImpl)
+    def getattr_set_AttributeError_impl(self, bs): bs.flow.stack.append(SetAttributeErrorImpl)
     def getattr_args(self, bs):
         bs.flow.stack.append(ArgGetter)
         return

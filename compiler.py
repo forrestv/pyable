@@ -485,7 +485,19 @@ def translate(desc, flow, stack=None, this=None):
                     None,
                 ])
             
-            bs.this.append(t.test)
+            bs.this.append(
+                ast.Call(
+                    func=ast.Attribute(
+                        value=t.test,
+                        attr='__nonzero__',
+                        ctx=ast.Load(),
+                        ),
+                    args=[],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                    ),
+                )
             @bs.this.append
             def _(bs, t=t, make_orelse=make_orelse, make_body=make_body):
                 type = bs.flow.stack.pop()
@@ -987,20 +999,22 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.Pass):
             pass # haha
         elif isinstance(t, ast.Assert):
-            skip = bs.program.get_unique_label()
-            bs.this.append(t.test)
-            @bs.this.append
-            def _(bs, t=t, skip=skip):
-                assert bs.flow.stack.pop() in (type_impl.Int, type_impl.Bool)
-                bs.code += isa.pop(registers.rax)
-                bs.code += isa.test(registers.rax, registers.rax)
-                bs.code += isa.jnz(skip)
-            # we're assuming print doesn't split this block
-            bs.this.append(ast.Print(dest=None, values=[ast.Str(t.msg.s if t.msg is not None else "assert error")], nl=True))
-            @bs.this.append
-            def _(bs, skip=skip):
-                bs.code += isa.ud2()
-                bs.code += skip
+            import mypyable
+            bs.this.append(ast.If(
+                test=t.test,
+                body=ast.Raise(
+                    type=ast.Call(
+                        func=mypyable.AssertionError_impl.load,
+                        args=[t.msg] if t.msg is not None else [],
+                        keywords=[],
+                        starargs=None,
+                        kwargs=None,
+                        ),
+                    inst=None,
+                    tback=None,
+                    ),
+                orelse=[],
+                ))
         elif isinstance(t, ast.List):
             assert isinstance(t.ctx, ast.Load)
             import mypyable
@@ -1131,9 +1145,24 @@ def translate(desc, flow, stack=None, this=None):
                 def exec_it(i):
                     def _(bs):
                         s = type_impl.Str.to_python(struct.pack("l", i))
-                        tree = ast.parse(s, "<string>")
-                        assert isinstance(tree, ast.Module)
-                        bs.this.append(tree.body)
+                        try:
+                            tree = ast.parse(s, "<string>")
+                        except SyntaxError, e:
+                            import mypyable
+                            bs.this.append(ast.Raise(
+                                type=ast.Call(
+                                    func=mypyable.SyntaxError_impl.load,
+                                    args=[],
+                                    keywords=[],
+                                    starargs=None,
+                                    kwargs=None,
+                                    ),
+                                inst=None,
+                                tback=None,
+                            ))
+                        else:
+                            assert isinstance(tree, ast.Module)
+                            bs.this.append(tree.body)
                     return _
                 util.unlift_noncached(bs, exec_it, "exec")
         elif isinstance(t, ast.TryFinally):

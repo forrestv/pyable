@@ -27,9 +27,21 @@ class _Type(object):
     def __repr__(self):
         return self.__class__.__name__
     def const_getattr(self, s):
-        f = getattr(self, "getattr_" + s, None)
-        if f is None:
-            assert False, "%s has no attr '%s'" % (self, s)
+        def not_found(bs):
+            import mypyable
+            bs.this.append(ast.Raise(
+                type=ast.Call(
+                    func=mypyable.AttributeError_impl.load,
+                    args=[ast.Str(s=s)],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                    ),
+                inst=None,
+                tback=None,
+                ),
+            )
+        f = getattr(self, "getattr_" + s, not_found)
         def _(bs):
             assert bs.flow.stack.pop() is self
             f(bs)
@@ -290,17 +302,17 @@ class _IntCmpMeths(_Type):
             bs.code += isa.pop(registers.rax)
             
             bs.code += isa.cmp(registers.rax, registers.rbx)
-            bs.code += isa.mov(registers.rax, 1)
+            bs.code += isa.mov(registers.rcx, 1)
             
             label = bs.program.get_unique_label()
             
             bs.code += self.inst(label)
             
-            bs.code += isa.mov(registers.rax, 0)
+            bs.code += isa.mov(registers.rcx, 0)
             
             bs.code += label
             
-            bs.code += isa.push(registers.rax)
+            bs.code += isa.push(registers.rcx)
             bs.flow.stack.append(Bool)
         return _
 IntCmpMeths = util.cdict(_IntCmpMeths)
@@ -380,6 +392,8 @@ class Int(_Type):
         bs.flow.stack.append(IntNonzeroMeth)
     def getattr___str__(self, bs):
         bs.flow.stack.append(IntStrMeth)
+    def getattr___repr__(self, bs):
+        bs.flow.stack.append(IntStrMeth)
     def getattr___neg__(self, bs):
         bs.flow.stack.append(IntNegMeth)
     def getattr___pos__(self, bs):
@@ -411,7 +425,7 @@ class Int(_Type):
         assert isinstance(value, int)
         value = int(value)
         def _(bs):
-            bs.code += isa.mov(registers.rax, value)
+            bs.code += isa.mov(registers.rax, util.fake_int(value))
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
         return _
@@ -872,6 +886,8 @@ class ProtoObject(_Type):
         return _
     def getattr___name__(self, bs):
         bs.this.append(Str.load_constant(self.name))
+    def load(self, bs):
+        bs.flow.stack.append(self)
 
 name_bits = util.cdict(lambda name: 1 << random.randrange(64))
 
@@ -1054,8 +1070,22 @@ class Scope(object):
             
             
             def load_in(slot_id):
-                if slot_id == -1: assert False, attr + " not found"
                 def _(bs):
+                    if slot_id == -1:
+                        print attr, "not found XXX"
+                        import mypyable
+                        bs.this.append(ast.Raise(
+                            type=ast.Call(
+                                func=mypyable.NameError_impl.load,
+                                args=[],
+                                keywords=[],
+                                starargs=None,
+                                kwargs=None,
+                                ),
+                            inst=None,
+                            tback=None,
+                        ))
+                        return
                     slots = self.slots[slot_id]
                     
                     try:
@@ -1332,19 +1362,29 @@ class StrGetitemMeth(_Type):
                 bs.code += isa.pop(registers.r12)
                 
                 skip = bs.program.get_unique_label()
+                end = bs.program.get_unique_label()
                 bs.code += isa.test(registers.r12, 1)
                 bs.code += isa.jz(skip)
+                # short
+                bs.code += isa.mov(registers.rax, registers.r12)
+                bs.code += isa.shr(registers.rax, 1)
+                bs.code += isa.and_(registers.rax, 127)
+                bs.code += isa.lea(registers.r12, MemRef(registers.rsp, -15, data_size=None))
+                bs.code += isa.jmp(end)
+                bs.code += skip
+                # long
+                bs.code += isa.mov(registers.rax, MemRef(registers.r12))
+                bs.code += end
                 
-                bs.code += isa.mov(registers.r12, registers.rsp)
-                bs.code += isa.sub(registers.r12, 7)
                 
+                skip = bs.program.get_unique_label()
+                bs.code += isa.cmp(registers.r13, 0)
+                bs.code += isa.jge(skip)
+                bs.code += isa.add(registers.r13, registers.rax)
                 bs.code += skip
                 
-                bs.code += isa.add(registers.r12, 8)
-                bs.code += isa.add(registers.r12, registers.r13)
-                
-                bs.code += isa.mov(registers.rax, 3)
-                bs.code += isa.mov(registers.al, MemRef(registers.r12, data_size=8))
+                bs.code += isa.mov(registers.rax, 0)
+                bs.code += isa.mov(registers.al, MemRef(registers.r12, 8, registers.r13, data_size=8))
                 bs.code += isa.shl(registers.rax, 8)
                 bs.code += isa.mov(registers.al, 3)
                 
@@ -1726,6 +1766,32 @@ class StrLenMeth(_Type):
             bs.code += end
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Int)
+        return _
+
+@apply
+class StrNonZeroMeth(_Type):
+    size = 1
+    def __call__(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rax)
+            
+            skip = bs.program.get_unique_label()
+            end = bs.program.get_unique_label()
+            
+            bs.code += isa.test(registers.rax, 1)
+            bs.code += isa.jz(skip)
+            bs.code += isa.shr(registers.rax, 1)
+            bs.code += isa.and_(registers.rax, 127)
+            bs.code += isa.jmp(end)
+            
+            bs.code += skip
+            bs.code += isa.mov(registers.rax, MemRef(registers.rax))
+
+            bs.code += end
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Bool)
         return _
 
 @apply
@@ -2114,6 +2180,7 @@ class Str(_Type):
     def getattr___eq__(self, bs): bs.flow.stack.append(StrCmpMeths['eq'])
     def getattr___ne__(self, bs): bs.flow.stack.append(StrCmpMeths['ne'])
     def getattr___add__(self, bs): bs.flow.stack.append(StrAddMeth)
+    def getattr___nonzero__(self, bs): bs.flow.stack.append(StrNonZeroMeth)
 
 functions = []
 
@@ -2130,12 +2197,21 @@ class FunctionStr(_Type):
     def __call__(self, arg_types):
         assert not arg_types
         def _(bs):
-            a 
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rax)
+            def _(value):
+                def _(bs):
+                    if isinstance(functions[value], str):
+                        assert False, functions[value]
+                    bs.this.append(Str.load_constant("<function %s at %i>" % (functions[value].name, value)))
+                return _
+            util.unlift(bs, _, "_Function.__call__")
         return _
 
 @apply
 class Function(_Type):
     size = 2
+    def getattr___str__(self, bs): bs.flow.stack.append(FunctionStr)
     def getattr___repr__(self, bs): bs.flow.stack.append(FunctionStr)
     def __call__(self, arg_types):
         def _(bs):
