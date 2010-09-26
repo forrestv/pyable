@@ -186,6 +186,9 @@ def hash(object):
 def help(object=_no_arg):
     pass
 
+def repr(object):
+    return object.__repr__()
+
 def hex(x):
     pass
 
@@ -206,13 +209,13 @@ def issubclass(class_, classinfo):
     pass
 
 def iter(o, sentinel):
-    pass
+    return o.__iter__()
 
 def open(name, mode='r', buffering=None):
     return file(name, mode, buffering)
 
 def range(start, end=None, step=1):
-    assert step
+    assert step != 0, "range step != 0"
     if end is None:
         end = start
         start = 0
@@ -225,25 +228,40 @@ def range(start, end=None, step=1):
 
 class rangeiterator(object):
     def __init__(self, start, end, step):
+        assert step != 0, "rangeiterator step != 0"
         self.pos = start
         self.end = end
         self.step = step
     def next(self):
-        if (self.step > 0 and i >= end) or (self.step < 0 and i <= end):
-            raise StopIteration()
         old_pos = self.pos
+        end = self.end
+        step = self.step
+        if (step > 0 and old_pos >= end) or (step < 0 and old_pos <= end):
+            raise StopIteration()
         self.pos = old_pos + self.step
         return old_pos
 
-def xrange(start, end=None, step=1):
-    assert step
-    if end is None:
-        end = start
-        start = 0
-    i = start
-    while (i < end and step > 0) or (i > end and step < 0):
-        yield i
-        i += step
+class xrange(object):
+    def __init__(self, start, end=None, step=1):
+        assert step != 0, "xrange step != 0"
+        if end is None:
+            end = start
+            start = 0
+        self.start = start
+        self.end = end
+        self.step = step
+    def __iter__(self):
+        return rangeiterator(self.start, self.end, self.step)
+
+#def xrange(start, end=None, step=1):
+#    assert step != 0, "xrange step != 0"
+#    if end is None:
+#        end = start
+#        start = 0
+#    i = start
+#    while (i < end and step > 0) or (i > end and step < 0):
+#        yield i
+#        i += step
 
 class module(object):
     pass
@@ -298,6 +316,7 @@ class list(object):
         self._allocated = new_allocated
         self._store = new_store
     def append(self, item):
+        print "GOT HERE .."
         if self._used + 1 > self._allocated:
              self._grow()
         self._store.store_object(4 * self._used, item)
@@ -306,20 +325,20 @@ class list(object):
     def __getitem__(self, index):
         if index < 0:
             index += self._used
-        if index >= self._used:
-            return None
+        if index < 0 or index >= self._used:
+            raise IndexError()
         return self._store.load_object(4 * index)
     def __setitem__(self, index, item):
         if index < 0:
             index += self._used
-        if index >= self._used:
-            return None
+        if index < 0 or index >= self._used:
+            raise IndexError()
         self._store.store_object(4 * index, item)
     def pop(self, index=-1):
         if index < 0:
             index += self._used
         if index < 0 or index >= self._used:
-            return None
+            raise IndexError()
         res = self._store.load_object(4 * index)
         i = 4 * index
         while i + 4 < 4 * self._used:
@@ -350,6 +369,74 @@ class list(object):
 import _pyable
 _pyable.set_list_impl(list)
 
+class dict(object):
+    def __init__(self):
+        self._len = 0
+        self._table = [[], [], [], []]
+    def __len__(self):
+        return self._len
+    def __iter__(self):
+        return dictiterator(self)
+    def _grow(self):
+        new_table = []
+        for i in xrange(len(self._table) * 2):
+            new_table.append([])
+        
+        new_allocated = self._allocated * 2 + 1
+        import _pyable
+        new_store = _pyable.raw(4 * new_allocated)
+        if self._used:
+            new_store.copy_from(self._store, 4 * self._used)
+        self._allocated = new_allocated
+        self._store = new_store
+    def __getitem__(self, index):
+        print "getitem", index
+        h = index.__hash__()
+        print h
+        l = self._table[h % self._table.__len__()]
+        #print l
+        if 1: pass
+        for i in xrange(len(l)):
+            print l[i][0], l[i][1]
+            if l[i][0] == index:
+                return l[i][1]
+        raise KeyError()
+    def __setitem__(self, index, item):
+        h = index.__hash__()
+        l = self._table[h % self._table.__len__()]
+        for i in xrange(len(l)):
+            print "i", i
+            if l[i][0] == index:
+                l[i] = (index, item)
+                break
+        else:
+            print "XXXA", l
+            print l
+            print "END", index, item
+            l.append((index, item))
+    def pop(self, index=-1):
+        if index < 0:
+            index += self._used
+        if index < 0 or index >= self._used:
+            return None
+        res = self._store.load_object(4 * index)
+        i = 4 * index
+        while i + 4 < 4 * self._used:
+            self._store[i] = self._store[i + 4]
+            t += 1
+        self._used -= 1
+        return res
+    def __repr__(self):
+        r = '['
+        first = True
+        for item in self:
+            if not first:
+                r += ', '
+            r += item.__repr__()
+            first = False
+        r += ']'
+        return r
+
 def len(o):
     return o.__len__()
 
@@ -364,7 +451,13 @@ class BaseException(object):
     pass
 
 class Exception(BaseException):
-    pass
+    def __init__(self, message=None):
+        self.message = message
+    def __repr__(self):
+        if self.message is None:
+            return self.__class__.__name__ + "()"
+        else:
+            return self.__class__.__name__ + "(" + repr(self.message) + ")"
 
 class StopIteration(Exception):
     pass
@@ -382,15 +475,18 @@ class AssertionError(Exception):
 _pyable.set_AssertionError_impl(AssertionError)
 
 class AttributeError(Exception):
-    def __init__(self, message):
-        self.message = message
-    def __repr__(self):
-        return self.message
+    pass
 _pyable.set_AttributeError_impl(AttributeError)
 
 class NameError(Exception):
     pass
 _pyable.set_NameError_impl(NameError)
+
+class KeyError(Exception):
+    pass
+
+class IndexError(Exception):
+    pass
 
 def input():
     return eval(raw_input())
@@ -419,38 +515,7 @@ else:
                 break
             exec l
         except Exception, e:
-            print "error! D:", e
-
-if 0:
-    import random
-    
-    # range
-    for i in xrange(1000):
-        a = random.randrange(-1000, 1000)
-        assert range(a) == oldrange(a)
-
-    for i in xrange(1000):
-        a = random.randrange(-1000, 1000)
-        b = random.randrange(-1000, 1000)
-        assert range(a, b) == oldrange(a, b)
-
-    for i in xrange(1000):
-        a = random.randrange(-1000, 1000)
-        b = random.randrange(-1000, 1000)
-        c = random.randrange(-1000, 1000)
-        while c == 0:
-            c = random.randrange(-1000, 1000)
-        assert range(a, b, c) == oldrange(a, b, c)
-    
-    # file
-    f = open(__file__)
-    l = f.read(10)
-    assert len(l) == 10, l
-    while True:
-        l = f.read(10)
-        if len(l) < 10:
-            break
-    f = open(__file__)
-    print f.read()
-
-
+            try:
+                print "error! D:", e
+            except:
+                print "exception caught printing exception! here be dragons!"

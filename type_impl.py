@@ -398,6 +398,8 @@ class Int(_Type):
         bs.flow.stack.append(IntNegMeth)
     def getattr___pos__(self, bs):
         bs.flow.stack.append(IntPosMeth)
+    def getattr___hash__(self, bs):
+        bs.flow.stack.append(IntPosMeth)
     def getattr___invert__(self, bs):
         bs.flow.stack.append(IntInvertMeth)
     def getattr___add__(self, bs):
@@ -777,6 +779,9 @@ class ProtoTuple(_Type):
             bs.code += isa.mov(registers.rax, ctypes.cast(ctypes.memmove, ctypes.c_void_p).value)	
             bs.code += isa.call(registers.rax)
             
+            for i in xrange(self.arg_size):
+                bs.code += isa.pop(registers.rax)
+            
             bs.code += isa.push(registers.r12)
             bs.flow.stack.append(self)
         return _
@@ -1072,12 +1077,11 @@ class Scope(object):
             def load_in(slot_id):
                 def _(bs):
                     if slot_id == -1:
-                        print attr, "not found XXX"
                         import mypyable
                         bs.this.append(ast.Raise(
                             type=ast.Call(
                                 func=mypyable.NameError_impl.load,
-                                args=[],
+                                args=[ast.Str(s=attr)],
                                 keywords=[],
                                 starargs=None,
                                 kwargs=None,
@@ -2169,9 +2173,11 @@ class Str(_Type):
             return ctypes.string_at(i+8, length)
     
     def getattr___str__(self, bs): bs.flow.stack.append(StrStrMeth)
+    def getattr___repr__(self, bs): bs.flow.stack.append(StrStrMeth) # XXX
     def getattr___getitem__(self, bs): bs.flow.stack.append(StrGetitemMeth)
     def getattr___ord__(self, bs): bs.flow.stack.append(StrOrdMeth)
     def getattr___len__(self, bs): bs.flow.stack.append(StrLenMeth)
+    def getattr___hash__(self, bs): bs.flow.stack.append(StrLenMeth) # XXX
     def getattr_join(self, bs): bs.flow.stack.append(StrJoinMeth)
     def getattr___gt__(self, bs): bs.flow.stack.append(StrCmpMeths['gt'])
     def getattr___lt__(self, bs): bs.flow.stack.append(StrCmpMeths['lt'])
@@ -2249,6 +2255,11 @@ class Function(_Type):
                                 if bs.flow.stack[-1].size >= 3:
                                     assert False
                                 if exc:
+                                    #print "exception passed down with stack", bs.flow.stack
+                                    #if len(bs.flow.stack) - 1 != 0:
+                                    #for i in xrange(len(bs.flow.stack) - 1):
+                                    #    util.rem1(bs)
+                                    #    print "stack unrolled to", bs.flow.stack
                                     bs.flow.try_stack.pop()(bs)
                             return _
                         util.unlift(bs, _, "_Function.__call__ (inner)")

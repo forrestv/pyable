@@ -91,26 +91,46 @@ class NonGenerator(Executable):
         def _(bs):
             @bs.flow.try_stack.append
             def _(bs):
-                @bs.this.append
-                def _(bs):
-                    type = bs.flow.stack.pop()
-                    
-                    if type.size >= 1:
-                        bs.code += isa.pop(registers.r13)
-                    if type.size >= 2:
-                        bs.code += isa.pop(registers.r14)
-                    if type.size >= 3:
-                        assert False
-                    
-                    bs.code += isa.mov(registers.r12, ~type.id)
-                    
-                    # leave
-                    bs.code += isa.mov(registers.rsp, registers.rbp)
-                    bs.code += isa.pop(registers.rbp)
-                    
-                    assert not bs.flow.stack, bs.flow.stack
-                    
-                    bs.code += isa.ret() # return address
+                type = bs.flow.stack.pop()
+                
+                if type.size >= 1:
+                    bs.code += isa.pop(registers.r13)
+                if type.size >= 2:
+                    bs.code += isa.pop(registers.r14)
+                if type.size >= 3:
+                    assert False
+                
+                bs.code += isa.mov(registers.r12, ~type.id)
+                
+                assert not bs.flow.stack, bs.flow.stack
+                
+                # leave
+                bs.code += isa.mov(registers.rsp, registers.rbp)
+                bs.code += isa.pop(registers.rbp)
+                
+                bs.code += isa.ret() # return address
+                
+                bs.this.append(None)
+            @bs.flow.return_stack.append
+            def _(bs):
+                type = bs.flow.stack.pop()
+                
+                if type.size >= 1:
+                    bs.code += isa.pop(registers.r13)
+                if type.size >= 2:
+                    bs.code += isa.pop(registers.r14)
+                if type.size >= 3:
+                    assert False
+                
+                bs.code += isa.mov(registers.r12, type.id)
+                
+                assert not bs.flow.stack, bs.flow.stack
+                
+                # leave
+                bs.code += isa.mov(registers.rsp, registers.rbp)
+                bs.code += isa.pop(registers.rbp)
+                
+                bs.code += isa.ret() # return address
                 
                 bs.this.append(None)
         return this
@@ -129,6 +149,7 @@ class Flow(object):
         self.allocd_locals = False
         self.class_stack = []
         self.try_stack = []
+        self.return_stack = []
     
     def __repr__(self):
         return "Flow<%r>" % self.__dict__
@@ -170,6 +191,7 @@ class Flow(object):
         r.allocd_locals = self.allocd_locals
         r.class_stack[:] = self.class_stack
         r.try_stack[:] = self.try_stack
+        r.return_stack[:] = self.return_stack
         return r
 
 class FrozenFlow(object):
@@ -966,30 +988,8 @@ def translate(desc, flow, stack=None, this=None):
                 bs.this.append(t.value)
             @bs.this.append
             def _(bs):
-                type = bs.flow.stack.pop()
-                
-                if type.size >= 1:
-                    bs.code += isa.pop(registers.r13)
-                if type.size >= 2:
-                    bs.code += isa.pop(registers.r14)
-                if type.size >= 3:
-                    assert False
-                
-                bs.code += isa.mov(registers.r12, type.id)
-                
-                # leave
-                bs.code += isa.mov(registers.rsp, registers.rbp)
-                bs.code += isa.pop(registers.rbp)
-                
-                assert not bs.flow.stack, bs.flow.stack
-                
-                bs.code += isa.ret() # return address
-            
-            bs.this.append(None)
+                bs.flow.return_stack.pop()(bs)
         elif isinstance(t, ast.Raise):
-            # type
-            # inst
-            # tback
             assert t.inst is None
             assert t.tback is None
             bs.this.append(t.type)
@@ -1001,7 +1001,10 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.Assert):
             import mypyable
             bs.this.append(ast.If(
-                test=t.test,
+                test=ast.UnaryOp(
+                    op=ast.Not(),
+                    operand=t.test,
+                    ),
                 body=ast.Raise(
                     type=ast.Call(
                         func=mypyable.AssertionError_impl.load,
@@ -1202,6 +1205,11 @@ def translate(desc, flow, stack=None, this=None):
                             bs.flow.ctrl_stack[:] = flow.ctrl_stack
                             assert bs.flow.try_stack == flow.try_stack
                             
+                            #print bs.flow.stack, flow.stack
+                            #for i in xrange(len(bs.flow.stack) - len(flow.stack)):
+                            #    print i
+                            #    util.rem1(bs)
+                            
                             bs.this = []
                             
                             if handler.name is None:
@@ -1218,33 +1226,60 @@ def translate(desc, flow, stack=None, this=None):
                 bs.flow.try_stack.pop()
             bs.this.append(t.orelse)
         elif isinstance(t, ast.For):
-            bs.this.append(
-                ast.Call(
-                    func=ast.Attribute(
-                        value=t.iter,
-                        attr='__iter__',
-                        ctx=ast.Load(),
-                        ),
-                    args=[],
-                    keywords=[],
-                    starargs=None,
-                    kwargs=None,
-                    ),
-                )
+            number = random.randrange(1000)
+            
             @util.memoize
-            def make_a(flow, t=t):
+            def make_c_normal(flow, stack=list(bs.call_stack), number=number, t=t):
+                def _(bs):
+                    type = bs.flow.stack.pop()
+                    for i in xrange(type.size):
+                        bs.code += isa.pop(registers.rax)
+                    print bs.flow.stack, "XX"
+                    bs.flow.return_stack.pop()
+                    removed = bs.flow.ctrl_stack.pop()
+                    assert removed[2] == number
+                return translate("while_c", flow, stack=stack, this=[
+                    _,
+                    t.orelse,
+                ])
+            
+            @util.memoize
+            def make_c(flow, stack=list(bs.call_stack), number=number):
+                def _(bs):
+                    type = bs.flow.stack.pop()
+                    for i in xrange(type.size):
+                        bs.code += isa.pop(registers.rax)
+                    print bs.flow.stack, "YY"
+                    bs.flow.return_stack.pop()
+                    removed = bs.flow.ctrl_stack.pop()
+                    assert removed[2] == number
+                return translate("while_c", flow, stack=stack, this=[
+                    _,
+                ])
+            
+            @util.memoize
+            def make_a(flow, t=t, make_c_normal=make_c_normal):
                 def _(bs):
                     @bs.flow.try_stack.append
                     def _(bs):
                         import mypyable
                         if mypyable.StopIteration_impl.isinstance(bs.flow.stack[-1]):
+                            # pop StopIteration
+                            print bs.flow.stack
                             type = bs.flow.stack.pop()
                             for i in xrange(type.size):
                                 bs.code += isa.pop(registers.rax)
-                            util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c(bs.flow)))
+                            @bs.this.append
+                            def _(bs):
+                                util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c_normal(bs.flow)))
                             bs.this.append(None)
                         else:
-                            assert False, (bs.flow.stack[-1], mypyable.StopIteration_impl)
+                            util.rem1(bs)
+                            bs.flow.try_stack.pop()(bs)
+                    @bs.flow.return_stack.append
+                    def _(bs):
+                        # pop iterator
+                        util.rem1(bs)
                     bs.this.append(
                         ast.Assign(
                             targets=[t.target],
@@ -1275,29 +1310,27 @@ def translate(desc, flow, stack=None, this=None):
                     None,
                 ])
             
-            number = random.randrange(1000)
-            
-            @util.memoize
-            def make_c(flow, stack=list(bs.call_stack), number=number):
-                def _(bs):
-                    type = bs.flow.stack.pop()
-                    for i in xrange(type.size):
-                        bs.code += isa.pop(registers.rax)
-                    removed = bs.flow.ctrl_stack.pop()
-                    assert removed[2] == number
-                return translate("while_c", flow, stack=stack, this=[
-                    _,
-                ])
-            
+            bs.this.append(
+                ast.Call(
+                    func=ast.Attribute(
+                        value=t.iter,
+                        attr='__iter__',
+                        ctx=ast.Load(),
+                        ),
+                    args=[],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                    ),
+                )
             @bs.this.append
-            def _(bs):
+            def _(bs, make_a=make_a, make_c=make_c, number=number):
                 bs.flow.ctrl_stack.append([
-                    lambda bs, flow=bs.flow, make_a=make_a: (util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_a(flow))), bs.this.append(None)), # continue
-                    lambda bs, flow=bs.flow, make_c=make_c: (util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c(flow))), bs.this.append(None)), # break
+                    lambda bs: (util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_a(bs.flow))), bs.this.append(None)), # continue
+                    lambda bs: (util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c(bs.flow))), bs.this.append(None)), # break
                     number, # used for sanity check while avoiding circular reference
                 ])
-                
-                bs.this.append(bs.flow.ctrl_stack[-1][0]) # continue
+                bs.flow.ctrl_stack[-1][0](bs) # continue
         else:
             assert False, util.dump(t)
         bs.call_stack.extend(reversed(bs.this))
