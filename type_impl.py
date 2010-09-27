@@ -528,17 +528,20 @@ class FloatStrMeth(_Type):
             bs.code += isa.add(registers.r12, 8)
             
             bs.code += isa.mov(registers.rdi, registers.r12)
+            bs.code += isa.add(registers.rdi, 1)
             bs.code += isa.mov(registers.rax, util.malloc_addr)
             bs.code += isa.call(registers.rax)
             
             bs.code += isa.mov(registers.rdi, registers.rax)
             bs.code += isa.lea(registers.rsi, MemRef(registers.rbp, -32 - 8, data_size=None))
             bs.code += isa.mov(registers.rdx, registers.r12)
-            bs.code += isa.mov(registers.rax, ctypes.cast(ctypes.memmove, ctypes.c_void_p).value)	
+            bs.code += isa.mov(registers.rax, ctypes.cast(ctypes.memmove, ctypes.c_void_p).value)
             bs.code += isa.call(registers.rax)
             
             bs.code += isa.mov(registers.rsp, registers.rbp)
             bs.code += isa.pop(registers.rbp)
+            
+            bs.code += isa.mov(MemRef(registers.rax, 0, registers.r12, data_size=8), 0)
             
             bs.code += isa.push(registers.rax)
             
@@ -1662,7 +1665,7 @@ class StrGetitemMeth(_Type):
                     bs.code += isa.jle(skip)
                     # long
                     bs.code += isa.mov(registers.rdi, registers.r10)
-                    bs.code += isa.add(registers.rdi, 8)
+                    bs.code += isa.add(registers.rdi, 9)
                     bs.code += isa.mov(registers.rax, util.malloc_addr)
                     bs.code += isa.push(registers.r10)
                     bs.code += isa.push(registers.r11)
@@ -1671,6 +1674,7 @@ class StrGetitemMeth(_Type):
                     bs.code += isa.pop(registers.r10)
                     bs.code += isa.push(registers.rax)
                     bs.code += isa.mov(MemRef(registers.rax), registers.r10)
+                    bs.code += isa.mov(MemRef(registers.rax, 8, registers.r10, data_size=8), 0)
                     bs.code += isa.add(registers.rax, 8)
                     bs.code += isa.jmp(end)
                     
@@ -2102,7 +2106,7 @@ class StrAddMeth(_Type):
             bs.code += isa.jle(skip)
             # long
             #bs.code += isa.ud2()
-            bs.code += isa.lea(registers.rdi, MemRef(registers.r14, 8, data_size=None))
+            bs.code += isa.lea(registers.rdi, MemRef(registers.r14, 8 + 1, data_size=None))
             bs.code += isa.mov(registers.rax, util.malloc_addr)
             bs.code += isa.push(registers.r10)
             bs.code += isa.push(registers.r11)
@@ -2120,6 +2124,7 @@ class StrAddMeth(_Type):
             bs.code += isa.lea(registers.rdi, MemRef(registers.rax, 8, registers.r10, data_size=None))
             bs.code += isa.rep()
             bs.code += isa.movsb()
+            bs.code += isa.mov(MemRef(registers.rax, 8, registers.r14, data_size=8), 0)
             
             bs.code += isa.jmp(end)
             bs.code += skip
@@ -2280,6 +2285,15 @@ class _Method(_Type):
     def __init__(self, self_type):
         self.self_type = self_type
         self.size = Function.size + self.self_type.size
+    def getattr___str__(self, bs):
+        bs.flow.stack.append(Function)
+        bs.flow.stack.append(self.self_type)
+        
+        type = bs.flow.stack.pop()
+        for i in xrange(type.size):
+            bs.code += isa.pop(registers.rax)
+        assert bs.flow.stack.pop() is Function
+        bs.flow.stack.append(FunctionStr)
     def load(self):
         def _(bs):
             assert bs.flow.stack.pop() is self.self_type

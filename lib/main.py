@@ -97,7 +97,7 @@ class file(object):
         self.name = name
         self._file = libc.fopen(name, mode)
         if not self._file:
-            assert False, "could not open file!"
+            raise IOError("could not open " + name)
     def read(self, size=None):
         if size is None:
             size = 1000000
@@ -267,7 +267,10 @@ class module(object):
 
 def __import__(name):
     print "starting import of", name
-    exec open(name).read()
+    exec open("test/" + name + ".py").read()
+    r = module()
+    r.__name__ = name
+    return r
     print "ending import of", name
 
 class listiterator(object):
@@ -477,6 +480,12 @@ class KeyError(Exception):
 class IndexError(Exception):
     pass
 
+class EnvironmentError(Exception):
+    pass
+
+class IOError(EnvironmentError):
+    pass
+
 def input():
     return eval(raw_input())
 
@@ -492,7 +501,7 @@ if len(_pyable.args):
     try:
         exec open(a).read()
     except Exception, e:
-        print "error! D:", e
+        print "error:", e
 else:
     print "pyAble SVN"
     print "Be careful!"
@@ -505,6 +514,6 @@ else:
             exec l
         except Exception, e:
             try:
-                print "error! D:", e
+                print "error:", e
             except:
                 print "exception caught printing exception! here be dragons!"

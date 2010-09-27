@@ -102,7 +102,7 @@ class NonGenerator(Executable):
                 
                 bs.code += isa.mov(registers.r12, ~type.id)
                 
-                assert not bs.flow.stack, bs.flow.stack
+                #assert not bs.flow.stack, bs.flow.stack
                 
                 # leave
                 bs.code += isa.mov(registers.rsp, registers.rbp)
