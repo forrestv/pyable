@@ -792,6 +792,7 @@ class ProtoTuple(_Type):
         return tuple(res)
     def getattr___getitem__(self, bs): bs.flow.stack.append(tuplegetitemmeths[self.arg_types])
     def getattr___str__(self, bs):
+        # XXX
         bs.flow.stack.append(IntStrMeth)
     def store(self):
         def _(bs):
