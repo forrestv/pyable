@@ -764,25 +764,20 @@ class ProtoTuple(_Type):
         return "ProtoTuple%r" % (self.arg_types,)
     def load(self):
         def _(bs):
-            for arg in self.arg_types[::-1]:
-                assert bs.flow.stack.pop() is arg
-            
+            #bs.code += isa.ud2()
             bs.code += isa.mov(registers.rdi, 8 * self.arg_size)
             bs.code += isa.mov(registers.rax, util.malloc_addr)
             bs.code += isa.call(registers.rax)
             
-            bs.code += isa.mov(registers.r12, registers.rax)
+            pos = 0
+            for type in self.arg_types:
+                assert bs.flow.stack.pop() is type
+                for j in xrange(type.size):
+                    bs.code += isa.pop(MemRef(registers.rax, pos + j * 8))
+                pos += type.size * 8
+            assert pos == self.arg_size * 8
             
-            bs.code += isa.mov(registers.rdi, registers.rax)
-            bs.code += isa.mov(registers.rsi, registers.rsp)
-            bs.code += isa.mov(registers.rdx, 8 * self.arg_size)
-            bs.code += isa.mov(registers.rax, ctypes.cast(ctypes.memmove, ctypes.c_void_p).value)	
-            bs.code += isa.call(registers.rax)
-            
-            for i in xrange(self.arg_size):
-                bs.code += isa.pop(registers.rax)
-            
-            bs.code += isa.push(registers.r12)
+            bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
         return _
     def to_python(self, data):
@@ -796,18 +791,21 @@ class ProtoTuple(_Type):
             res.append(item.to_python(data[pos:pos+item.size]))
         return tuple(res)
     def getattr___getitem__(self, bs): bs.flow.stack.append(tuplegetitemmeths[self.arg_types])
+    def getattr___str__(self, bs):
+        bs.flow.stack.append(IntStrMeth)
     def store(self):
         def _(bs):
             assert bs.flow.stack.pop() is self
             
-            isa.pop(registers.rax)
+            bs.code += isa.pop(registers.rax)
             
             pos = 0
-            for i, type in enumerate(self.arg_types):
+            for type in reversed(self.arg_types):
                 bs.flow.stack.append(type)
-                for j in xrange(type.size):
-                    bs.code += isa.push(MemRef(registers.rax, pos))
-                    pos += 8
+                for j in reversed(xrange(type.size)):
+                    bs.code += isa.push(MemRef(registers.rax, pos + j * 8))
+                pos += type.size * 8
+            assert pos == self.arg_size * 8
         return _
 
 prototuples = util.cdict(ProtoTuple)

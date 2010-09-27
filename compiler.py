@@ -1234,7 +1234,6 @@ def translate(desc, flow, stack=None, this=None):
                     type = bs.flow.stack.pop()
                     for i in xrange(type.size):
                         bs.code += isa.pop(registers.rax)
-                    print bs.flow.stack, "XX"
                     bs.flow.return_stack.pop()
                     removed = bs.flow.ctrl_stack.pop()
                     assert removed[2] == number
@@ -1249,7 +1248,6 @@ def translate(desc, flow, stack=None, this=None):
                     type = bs.flow.stack.pop()
                     for i in xrange(type.size):
                         bs.code += isa.pop(registers.rax)
-                    print bs.flow.stack, "YY"
                     bs.flow.return_stack.pop()
                     removed = bs.flow.ctrl_stack.pop()
                     assert removed[2] == number
@@ -1265,7 +1263,6 @@ def translate(desc, flow, stack=None, this=None):
                         import mypyable
                         if mypyable.StopIteration_impl.isinstance(bs.flow.stack[-1]):
                             # pop StopIteration
-                            print bs.flow.stack
                             type = bs.flow.stack.pop()
                             for i in xrange(type.size):
                                 bs.code += isa.pop(registers.rax)
@@ -1276,10 +1273,6 @@ def translate(desc, flow, stack=None, this=None):
                         else:
                             util.rem1(bs)
                             bs.flow.try_stack.pop()(bs)
-                    @bs.flow.return_stack.append
-                    def _(bs):
-                        # pop iterator
-                        util.rem1(bs)
                     bs.this.append(
                         ast.Assign(
                             targets=[t.target],
@@ -1323,6 +1316,11 @@ def translate(desc, flow, stack=None, this=None):
                     kwargs=None,
                     ),
                 )
+            @bs.flow.return_stack.append
+            def for_returner(bs):
+                # pop iterator
+                util.rem1(bs)
+                bs.flow.return_stack.pop()(bs)
             @bs.this.append
             def _(bs, make_a=make_a, make_c=make_c, number=number):
                 bs.flow.ctrl_stack.append([
