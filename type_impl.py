@@ -1132,6 +1132,9 @@ class Scope(object):
             res[name] = type
         return res
 
+class DictProxy(_Type):
+    size = 1
+
 class ProtoInstance(_Type):
     size = 1
     def __init__(self, type):
@@ -1209,6 +1212,7 @@ class ProtoInstance(_Type):
         return _
     def setattr_const_string(self, attr):
         assert attr != '__class__'
+        assert attr != '__dict__'
         def _(bs):
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.r12)
@@ -1274,6 +1278,11 @@ class ProtoInstance(_Type):
                     bs.code += isa.pop(registers.rax)
                 assert self.type.size == 0
                 bs.flow.stack.append(self.type)
+            return _
+        if attr == '__dict__':
+            def _(bs):
+                assert bs.flow.stack.pop() is self
+                bs.flow.stack.append(DictProxy)
             return _
         def _(bs):
             assert bs.flow.stack.pop() is self

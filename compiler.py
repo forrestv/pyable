@@ -1139,12 +1139,21 @@ def translate(desc, flow, stack=None, this=None):
             def _(bs):
                 type_impl.protoslices[tuple(bs.flow.stack[-3:])].load()(bs)
         elif isinstance(t, ast.Exec):
-            assert not t.globals
-            assert not t.locals
             bs.this.append(t.body)
+            bs.this.append(t.globals if t.globals else type_impl.NoneType.load())
+            bs.this.append(t.locals if t.locals else type_impl.NoneType.load())
             @bs.this.append
             def _(bs):
-                assert bs.flow.stack.pop() is type_impl.Str
+                locals_type = bs.flow.stack.pop()
+                if locals_type is type_impl.DictProxy:
+                    assert False
+                    # replace current locals with this, pushing old to stack for later replacement
+                elif locals_type is type_impl.NoneType:
+                    pass
+                else:
+                    assert False
+                assert bs.flow.stack.pop() is type_impl.NoneType # globals
+                assert bs.flow.stack.pop() is type_impl.Str # body
                 def exec_it(i):
                     def _(bs):
                         s = type_impl.Str.to_python(struct.pack("l", i))

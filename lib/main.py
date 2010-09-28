@@ -267,11 +267,15 @@ class module(object):
 
 def __import__(name):
     print "starting import of", name
-    exec open("test/" + name + ".py").read()
     r = module()
+    # XXX insert module table insert
     r.__name__ = name
-    return r
+    r.__name__ = name
+    r.__doc__ = None
+    r.__package__ = None
+    exec open("test/" + name + ".py").read() in r.__dict__
     print "ending import of", name
+    return r
 
 class listiterator(object):
     def __init__(self, parent):
