@@ -239,13 +239,21 @@ class RawType(type_impl._Type):
         return _
 
 list_impl = None
-
 @apply
 class SetListImpl(_PythonFunction):
     def handler(self, new):
         global list_impl
         assert list_impl is None, "list_impl can only be set once"
         list_impl = new
+        return type_impl.NoneType
+
+dict_impl = None
+@apply
+class SetDictImpl(_PythonFunction):
+    def handler(self, new):
+        global dict_impl
+        assert dict_impl is None, "dict_impl can only be set once"
+        dict_impl = new
         return type_impl.NoneType
 
 StopIteration_impl = None
@@ -341,6 +349,7 @@ class PyableModule(type_impl._Type):
     def getattr_type_number(self, bs): bs.flow.stack.append(Type_Number)
     def getattr_raw(self, bs): bs.flow.stack.append(RawType)
     def getattr_set_list_impl(self, bs): bs.flow.stack.append(SetListImpl)
+    def getattr_set_list_impl(self, bs): bs.flow.stack.append(SetDictImpl)
     def getattr_set_StopIteration_impl(self, bs): bs.flow.stack.append(SetStopIterationImpl)
     def getattr_set_SyntaxError_impl(self, bs): bs.flow.stack.append(SetSyntaxErrorImpl)
     def getattr_set_NameError_impl(self, bs): bs.flow.stack.append(SetNameErrorImpl)

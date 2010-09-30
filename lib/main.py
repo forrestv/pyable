@@ -432,6 +432,7 @@ class dict(object):
             first = False
         r += ']'
         return r
+_pyable.set_dict_impl(dict)
 
 def len(o):
     return o.__len__()
