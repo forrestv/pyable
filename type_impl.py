@@ -900,7 +900,7 @@ name_bits = util.cdict(lambda name: 1 << random.randrange(64))
 
 @apply
 class Scope(object):
-    slots = []
+    slots = [None]
     
     def create(self):
         def _(bs):
@@ -1005,54 +1005,59 @@ class Scope(object):
             def store_in(slot_id):
                 def _(bs):
                     slots = self.slots[slot_id]
-                    type = bs.flow.stack.pop()
-                    assert type is not None
-                    if attr not in slots or slots[attr][0] is not type:
-                        var_types = self.get_var_types(slots)
-                        var_types[attr] = type
-                        new_slots = self.get_slots(var_types)
-                        if new_slots in self.slots:
-                            new_id = self.slots.index(new_slots)
-                        else:
-                            new_id = len(self.slots)
-                            self.slots.append(new_slots)
+                    if slots is None: # dictproxy
+                        bs.code += isa.push(MemRef(registers.r12, 8))
+                        bs.flow.stack.append(ProtoInstance(None))
+                        bs.this.append(bs.flow.stack[-1].setattr_const_string(attr))
+                    else:
+                        type = bs.flow.stack.pop()
+                        assert type is not None
+                        if attr not in slots or slots[attr][0] is not type:
+                            var_types = self.get_var_types(slots)
+                            var_types[attr] = type
+                            new_slots = self.get_slots(var_types)
+                            if new_slots in self.slots:
+                                new_id = self.slots.index(new_slots)
+                            else:
+                                new_id = len(self.slots)
+                                self.slots.append(new_slots)
+                            
+                            #old_size = sum(x.size for x, _ in slots.itervalues())
+                            new_size = sum(x.size for x, _ in new_slots.itervalues() if x is not None)
+                            
+                            bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8)) # r14 = pointer to old slots data
+                            
+                            bs.code += isa.mov(registers.rax, util.malloc_addr)
+                            bs.code += isa.mov(registers.rdi, 8 * new_size)
+                            bs.code += isa.call(registers.rax)
+                            bs.code += isa.mov(registers.r15, registers.rax) # r15 = pointer to new slots data
+                            
+                            # move variables organized as slots in *r14 to as organized in new_slots in *r15
+                            for attr_, (type_, pos_) in new_slots.iteritems():
+                                if attr_ == attr:
+                                    continue
+                                assert slots[attr_][0] is type_
+                                old_pos_ = slots[attr_][1]
+                                for i in xrange(type_.size):
+                                    bs.code += isa.mov(registers.rax, MemRef(registers.r14, 8 * (old_pos_ + i)))
+                                    bs.code += isa.mov(MemRef(registers.r15, 8 * (pos_ + i)), registers.rax)
+                            
+                            # free old slots holder
+                            bs.code += isa.mov(registers.rax, util.free_addr)
+                            bs.code += isa.mov(registers.rdi, registers.r14)
+                            bs.code += isa.call(registers.rax)
+                            
+                            # change reference and id on object
+                            bs.code += isa.mov(MemRef(registers.r12), new_id)
+                            bs.code += isa.mov(MemRef(registers.r12, 8), registers.r15)
+                            bs.code += isa.mov(registers.rax, name_bits[attr])
+                            bs.code += isa.or_(MemRef(registers.r12, 24), registers.rax)
+                            
+                            slots = new_slots
                         
-                        #old_size = sum(x.size for x, _ in slots.itervalues())
-                        new_size = sum(x.size for x, _ in new_slots.itervalues() if x is not None)
-                        
-                        bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8)) # r14 = pointer to old slots data
-                        
-                        bs.code += isa.mov(registers.rax, util.malloc_addr)
-                        bs.code += isa.mov(registers.rdi, 8 * new_size)
-                        bs.code += isa.call(registers.rax)
-                        bs.code += isa.mov(registers.r15, registers.rax) # r15 = pointer to new slots data
-                        
-                        # move variables organized as slots in *r14 to as organized in new_slots in *r15
-                        for attr_, (type_, pos_) in new_slots.iteritems():
-                            if attr_ == attr:
-                                continue
-                            assert slots[attr_][0] is type_
-                            old_pos_ = slots[attr_][1]
-                            for i in xrange(type_.size):
-                                bs.code += isa.mov(registers.rax, MemRef(registers.r14, 8 * (old_pos_ + i)))
-                                bs.code += isa.mov(MemRef(registers.r15, 8 * (pos_ + i)), registers.rax)
-                        
-                        # free old slots holder
-                        bs.code += isa.mov(registers.rax, util.free_addr)
-                        bs.code += isa.mov(registers.rdi, registers.r14)
-                        bs.code += isa.call(registers.rax)
-                        
-                        # change reference and id on object
-                        bs.code += isa.mov(MemRef(registers.r12), new_id)
-                        bs.code += isa.mov(MemRef(registers.r12, 8), registers.r15)
-                        bs.code += isa.mov(registers.rax, name_bits[attr])
-                        bs.code += isa.or_(MemRef(registers.r12, 24), registers.rax)
-                        
-                        slots = new_slots
-                    
-                    bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8))
-                    for i in xrange(type.size):
-                        bs.code += isa.pop(MemRef(registers.r14, 8 * (slots[attr][1] + i)))
+                        bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8))
+                        for i in xrange(type.size):
+                            bs.code += isa.pop(MemRef(registers.r14, 8 * (slots[attr][1] + i)))
                 return _
             util.unlift(bs, store_in, "Scope.set_name")
         return _
@@ -1060,19 +1065,20 @@ class Scope(object):
         bits = name_bits[attr]
         def _(bs):
             bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
-            loop = bs.program.get_unique_label()
-            bs.code += loop
-            bs.code += isa.cmp(registers.r12, 0)
-            bs.code += isa.mov(registers.rax, -1)
-            skip = bs.program.get_unique_label()
-            bs.code += isa.je(skip)
-            bs.code += isa.mov(registers.rax, name_bits[attr])
-            bs.code += isa.test(MemRef(registers.r12, 24), registers.rax)
-            bs.code += isa.mov(registers.rax, MemRef(registers.r12)) # slot id
-            bs.code += isa.jnz(skip)
-            bs.code += isa.mov(registers.r12, MemRef(registers.r12, 16))
-            bs.code += isa.jmp(loop)
-            bs.code += skip
+            #loop = bs.program.get_unique_label()
+            #bs.code += loop
+            #bs.code += isa.cmp(registers.r12, 0)
+            #bs.code += isa.mov(registers.rax, -1)
+            #skip = bs.program.get_unique_label()
+            #bs.code += isa.je(skip)
+            #bs.code += isa.mov(registers.rax, name_bits[attr])
+            #bs.code += isa.test(MemRef(registers.r12, 24), registers.rax)
+            #bs.code += isa.mov(registers.rax, MemRef(registers.r12)) # slot id
+            #bs.code += isa.jnz(skip)
+            #bs.code += isa.mov(registers.r12, MemRef(registers.r12, 16))
+            #bs.code += isa.jmp(loop)
+            #bs.code += skip
+            bs.code += isa.mov(registers.rax, MemRef(registers.r12)) # new
             bs.code += isa.push(registers.rax) # slot id
             
             
@@ -1118,6 +1124,7 @@ class Scope(object):
     def del_name(self, attr):
         def _(bs):
             assert bs.flow.stack.pop() is self
+            assert False
         return _
     def get_slots(self, var_types):
         pos = 0
@@ -1135,12 +1142,14 @@ class Scope(object):
 class DictProxy(_Type):
     size = 1
 
+
+protoslots = [{}]
+
 class ProtoInstance(_Type):
     size = 1
     def __init__(self, type):
         _Type.__init__(self)
         self.type = type
-        self.slots = [{}]
     def __repr__(self):
         return "ProtoInstance(%s)" % (self.type,)
     def new(self, arg_types):
@@ -1219,17 +1228,17 @@ class ProtoInstance(_Type):
             bs.code += isa.push(MemRef(registers.r12)) # slot id
             def _(value):
                 def _(bs):
-                    slots = self.slots[value]
+                    slots = protoslots[value]
                     type = bs.flow.stack.pop()
                     if attr not in slots or slots[attr][0] is not type:
                         var_types = self.get_var_types(slots)
                         var_types[attr] = type
                         new_slots = self.get_slots(var_types)
-                        if new_slots in self.slots:
-                            new_id = self.slots.index(new_slots)
+                        if new_slots in protoslots:
+                            new_id = protoslots.index(new_slots)
                         else:
-                            new_id = len(self.slots)
-                            self.slots.append(new_slots)
+                            new_id = len(protoslots)
+                            protoslots.append(new_slots)
                         
                         #old_size = sum(x.size for x, _ in slots.itervalues())
                         new_size = sum(x.size for x, _ in new_slots.itervalues())
@@ -1291,7 +1300,7 @@ class ProtoInstance(_Type):
             bs.code += isa.push(MemRef(registers.r12)) # slot id
             def _(value):
                 def _(bs):
-                    slots = self.slots[value]
+                    slots = protoslots[value]
                     if attr in slots:
                         type, pos = slots[attr]
                         bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8))
@@ -2221,8 +2230,21 @@ class FunctionStr(_Type):
             def _(value):
                 def _(bs):
                     if isinstance(functions[value], str):
-                        assert False, functions[value]
-                    bs.this.append(Str.load_constant("<function %s at %i>" % (functions[value].name, value)))
+                        import mypyable
+                        bs.this.append(ast.Raise(
+                            type=ast.Call(
+                                func=mypyable.AttributeError_impl.load,
+                                args=[ast.Str(s=functions[value])],
+                                keywords=[],
+                                starargs=None,
+                                kwargs=None,
+                                ),
+                            inst=None,
+                            tback=None,
+                            ),
+                        )
+                    else:
+                        bs.this.append(Str.load_constant("<function %s at %i>" % (functions[value].name, value)))
                 return _
             util.unlift(bs, _, "_Function.__call__")
         return _

@@ -1144,15 +1144,7 @@ def translate(desc, flow, stack=None, this=None):
             bs.this.append(t.locals if t.locals else type_impl.NoneType.load())
             @bs.this.append
             def _(bs):
-                locals_type = bs.flow.stack.pop()
-                if locals_type is type_impl.DictProxy:
-                    assert False
-                    # replace current locals with this, pushing old to stack for later replacement
-                elif locals_type is type_impl.NoneType:
-                    pass
-                else:
-                    assert False
-                assert bs.flow.stack.pop() is type_impl.NoneType # globals
+                util.rev3(bs)
                 assert bs.flow.stack.pop() is type_impl.Str # body
                 def exec_it(i):
                     def _(bs):
@@ -1174,7 +1166,38 @@ def translate(desc, flow, stack=None, this=None):
                             ))
                         else:
                             assert isinstance(tree, ast.Module)
+                            assert bs.flow.stack.pop() is type_impl.NoneType # globals
+                            locals_type = bs.flow.stack.pop()
+                            if locals_type is type_impl.DictProxy:
+                                assert locals_type.size == 1
+                                                                
+                                alloc_locals(bs) # HACK, we should instead put this in the scope linked list
+                                
+                                bs.code += isa.pop(registers.r12)
+                                
+                                bs.code += isa.mov(registers.rdi, 8 * 4)
+                                bs.code += isa.mov(registers.rax, util.malloc_addr)
+                                bs.code += isa.call(registers.rax)
+                                
+                                bs.code += isa.mov(MemRef(registers.rax), 0) # type
+                                bs.code += isa.mov(MemRef(registers.rax, 8), registers.r12) # object
+                                bs.code += isa.mov(registers.rbx, MemRef(registers.rbp, -8)) # get parent
+                                bs.code += isa.mov(MemRef(registers.rax, 16), registers.rbx) # parent
+                                bs.code += isa.mov(registers.rbx, -1)
+                                bs.code += isa.mov(MemRef(registers.rax, 24), registers.rbx) # bitfield
+                                
+                                bs.code += isa.mov(MemRef(registers.rbp, -8), registers.rax)
+                            elif locals_type is type_impl.NoneType:
+                                pass
+                            else:
+                                assert False
                             bs.this.append(tree.body)
+                            if locals_type is type_impl.DictProxy:
+                                @bs.this.append
+                                def _(bs):
+                                    bs.code += isa.mov(registers.rax, MemRef(registers.rbp, -8))
+                                    bs.code += isa.mov(registers.rax, MemRef(registers.rax, 16))
+                                    bs.code += isa.mov(MemRef(registers.rbp, -8), registers.rax)
                     return _
                 util.unlift_noncached(bs, exec_it, "exec")
         elif isinstance(t, ast.TryFinally):
