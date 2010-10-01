@@ -1035,12 +1035,10 @@ def translate(desc, flow, stack=None, this=None):
                     ),
                 )
             for e in t.elts:
-                def _(bs):
-                    assert bs.flow.stack[-1] is type_impl.protoinstances[mypyable.list_impl]
-                bs.this.append(
+                bs.this.append(ast.Expr(
                     ast.Call(
                         func=ast.Attribute(
-                            value=_,
+                            value=util.dup,
                             attr='append',
                             ctx=ast.Load(),
                             ),
@@ -1049,7 +1047,36 @@ def translate(desc, flow, stack=None, this=None):
                         starargs=None,
                         kwargs=None,
                         ),
-                    )
+                    ))
+        elif isinstance(t, ast.Dict):
+            import mypyable
+            def _gettype(bs):
+                assert mypyable.dict_impl is not None, "dicts haven't been bootstrapped"
+                bs.flow.stack.append(mypyable.dict_impl)
+                assert mypyable.dict_impl.size == 0
+            bs.this.append(
+                ast.Call(
+                    func=_gettype,
+                    args=[],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                    ),
+                )
+            for k, v in zip(t.keys, t.values):
+                bs.this.append(ast.Expr(
+                    ast.Call(
+                        func=ast.Attribute(
+                            value=util.dup,
+                            attr='__setitem__',
+                            ctx=ast.Load(),
+                            ),
+                        args=[k, v],
+                        keywords=[],
+                        starargs=None,
+                        kwargs=None,
+                        ),
+                    ))
         elif isinstance(t, ast.Import):
             for name in t.names:
                 assert isinstance(name, ast.alias)

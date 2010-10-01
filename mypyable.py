@@ -349,7 +349,7 @@ class PyableModule(type_impl._Type):
     def getattr_type_number(self, bs): bs.flow.stack.append(Type_Number)
     def getattr_raw(self, bs): bs.flow.stack.append(RawType)
     def getattr_set_list_impl(self, bs): bs.flow.stack.append(SetListImpl)
-    def getattr_set_list_impl(self, bs): bs.flow.stack.append(SetDictImpl)
+    def getattr_set_dict_impl(self, bs): bs.flow.stack.append(SetDictImpl)
     def getattr_set_StopIteration_impl(self, bs): bs.flow.stack.append(SetStopIterationImpl)
     def getattr_set_SyntaxError_impl(self, bs): bs.flow.stack.append(SetSyntaxErrorImpl)
     def getattr_set_NameError_impl(self, bs): bs.flow.stack.append(SetNameErrorImpl)

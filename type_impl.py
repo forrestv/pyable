@@ -767,17 +767,19 @@ class ProtoTuple(_Type):
         return "ProtoTuple%r" % (self.arg_types,)
     def load(self):
         def _(bs):
+            #print self.arg_types, bs.flow.stack
             #bs.code += isa.ud2()
             bs.code += isa.mov(registers.rdi, 8 * self.arg_size)
             bs.code += isa.mov(registers.rax, util.malloc_addr)
             bs.code += isa.call(registers.rax)
             
             pos = 0
-            for type in self.arg_types:
-                assert bs.flow.stack.pop() is type
+            for type in reversed(self.arg_types):
+                type2 = bs.flow.stack.pop()
+                assert type is type2, (self, type, type2)
                 for j in xrange(type.size):
-                    bs.code += isa.pop(MemRef(registers.rax, pos + j * 8))
-                pos += type.size * 8
+                    bs.code += isa.pop(MemRef(registers.rax, pos))
+                    pos += 8
             assert pos == self.arg_size * 8
             
             bs.code += isa.push(registers.rax)
@@ -806,9 +808,9 @@ class ProtoTuple(_Type):
             pos = 0
             for type in reversed(self.arg_types):
                 bs.flow.stack.append(type)
-                for j in reversed(xrange(type.size)):
-                    bs.code += isa.push(MemRef(registers.rax, pos + j * 8))
-                pos += type.size * 8
+                for j in xrange(type.size):
+                    bs.code += isa.push(MemRef(registers.rax, pos + (type.size - 1 - j) * 8))
+                pos += 8 * type.size
             assert pos == self.arg_size * 8
         return _
 
