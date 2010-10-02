@@ -285,7 +285,7 @@ class OffsetListProxy(object):
             item += self.offset
         return self.source.__getitem__(item)
 
-data = extarray('B', '\xff'*100000000)
+data = extarray('B', '\xff'*10000000)
 data.references = []
 data_pos = 0
 make_executable(*data.buffer_info())

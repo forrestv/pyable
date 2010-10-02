@@ -1,5 +1,3 @@
-print module()
-
 print -1
 
 x = 1
