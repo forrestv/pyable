@@ -619,6 +619,7 @@ def translate(desc, flow, stack=None, this=None):
                 elif isinstance(op, ast.NotEq): r = "ne"
                 elif isinstance(op, ast.Gt): r = "gt"
                 elif isinstance(op, ast.GtE): r = "ge" 
+                elif isinstance(op, ast.In): r = "contains" 
                 else: assert False, op
                 
                 #bs.this.append(t.left)
@@ -635,11 +636,11 @@ def translate(desc, flow, stack=None, this=None):
                 bs.this.append(
                     ast.Call(
                         func=ast.Attribute(
-                            value=t.left,
+                            value=t.comparators[0] if isinstance(op, ast.In) else t.left,
                             attr='__%s__' % r,
                             ctx=ast.Load(),
                             ),
-                        args=[t.comparators[0]],
+                        args=[t.left if isinstance(op, ast.In) else t.comparators[0]],
                         keywords=[],
                         starargs=None,
                         kwargs=None,

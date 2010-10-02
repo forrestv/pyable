@@ -1102,6 +1102,12 @@ class Scope(object):
                         return
                     slots = self.slots[slot_id]
                     
+                    if slots is None:
+                        bs.code += isa.push(MemRef(registers.r12, 8))
+                        bs.flow.stack.append(ProtoInstance(None))
+                        bs.this.append(bs.flow.stack[-1].const_getattr(attr))
+                        return
+                    
                     try:
                         type, pos = slots[attr]
                         if type is None: raise KeyError

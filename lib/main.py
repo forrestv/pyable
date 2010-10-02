@@ -262,21 +262,6 @@ class xrange(object):
 #        yield i
 #        i += step
 
-class module(object):
-    pass
-
-def __import__(name):
-    #print "starting import of", name
-    r = module()
-    # XXX insert module table insert
-    r.__name__ = name
-    r.__doc__ = None
-    r.__package__ = None
-    exec open("test/" + name + ".py").read() in None, r.__dict__
-    #print "ending import of", name
-    #print r.x
-    return r
-
 class listiterator(object):
     def __init__(self, parent):
         self.parent = parent
@@ -410,28 +395,14 @@ class dict(object):
                 break
         else:
             l.append((index, item))
-    def pop(self, index=-1):
-        if index < 0:
-            index += self._used
-        if index < 0 or index >= self._used:
-            return None
-        res = self._store.load_object(4 * index)
-        i = 4 * index
-        while i + 4 < 4 * self._used:
-            self._store[i] = self._store[i + 4]
-            t += 1
-        self._used -= 1
-        return res
-    def __repr__(self):
-        r = '['
-        first = True
-        for item in self:
-            if not first:
-                r += ', '
-            r += item.__repr__()
-            first = False
-        r += ']'
-        return r
+    def __contains__(self, index):
+        h = index.__hash__()
+        l = self._table[h % self._table.__len__()]
+        for i in xrange(len(l)):
+            if l[i][0] == index:
+                return True
+        return False
+        
 _pyable.set_dict_impl(dict)
 
 def len(o):
@@ -490,6 +461,36 @@ class EnvironmentError(Exception):
 
 class IOError(EnvironmentError):
     pass
+
+
+class module(object):
+    pass
+
+modules = {}
+
+paths = []
+paths.append("/usr/lib/python2.6/")
+paths.append("test/")
+
+def __import__(name):
+    if name in modules:
+        return modules[name]
+    r = module()
+    r.__name__ = name
+    r.__doc__ = None
+    r.__package__ = None
+    for path in paths:
+        try:
+            f = open(path + name + ".py")
+        except IOError:
+            continue
+        f = f.read()
+        exec f in None, r.__dict__
+        modules[name] = r
+        return r
+    else:
+        raise ImportError()
+    assert False
 
 def input():
     return eval(raw_input())
