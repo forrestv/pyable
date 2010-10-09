@@ -45,7 +45,7 @@ main_module = compiler.Function(ast.FunctionDef(
 def make_root():
     return compiler.translate("make_root", compiler.Flow(None), this=[
         lambda bs: bs.code.add(isa.push(0)), # moot scope
-        main_module(),
+        main_module.call(),
         lambda bs: bs.code.add(isa.pop(registers.rax)), # moot scope
         lambda bs: bs.code.add(isa.ret()),
         None,

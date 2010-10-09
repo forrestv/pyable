@@ -23,7 +23,7 @@ class _PythonFunction(type_impl._Type):
         # TODO return_area
         assert res.size == 0
         return res.id
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         @util.called_from_asm
         def handler(rsp):
             args = []
@@ -60,7 +60,7 @@ class _PythonFunction(type_impl._Type):
                     bs.flow.stack.append(type)
                     assert bs.flow.stack[-1].size == 0
                 return _
-            util.unlift(bs, _, "PythonFunction.__call__")
+            util.unlift(bs, _, "PythonFunction.call")
         return _
     def load(self):
         def _(bs):
@@ -79,7 +79,7 @@ class Type(_PythonFunction):
 @apply
 class Type_Number(type_impl._Type):
     size = 0
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         def _(bs):
             for i in xrange(bs.flow.stack[-1].size):
@@ -95,7 +95,7 @@ class Type_Number(type_impl._Type):
 @apply
 class RawStoreObjectMeth(type_impl._Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 2, arg_types
         assert arg_types[0] is type_impl.Int
         def _(bs):
@@ -122,7 +122,7 @@ class RawStoreObjectMeth(type_impl._Type):
 @apply
 class RawLoadObjectMeth(type_impl._Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         assert arg_types[0] is type_impl.Int
         def _(bs):
@@ -143,13 +143,13 @@ class RawLoadObjectMeth(type_impl._Type):
                         bs.code += isa.push(MemRef(registers.r12, i * 8 + 8))
                     bs.flow.stack.append(type)
                 return _
-            util.unlift(bs, _, "RawLoadObjectMeth.__call__")
+            util.unlift(bs, _, "RawLoadObjectMeth.call")
         return _
 
 @apply
 class RawCopyFromMeth(type_impl._Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 2
         assert arg_types[0] is Raw
         assert arg_types[1] is type_impl.Int
@@ -175,7 +175,7 @@ class RawCopyFromMeth(type_impl._Type):
 @apply
 class RawGetitemMeth(type_impl._Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         assert arg_types[0] is type_impl.Int
         def _(bs):
@@ -193,7 +193,7 @@ class RawGetitemMeth(type_impl._Type):
 @apply
 class RawSetitemMeth(type_impl._Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 2, arg_types
         assert arg_types[0] is type_impl.Int
         assert arg_types[1] is type_impl.Int
@@ -224,7 +224,7 @@ class Raw(type_impl._Type):
 @apply
 class RawType(type_impl._Type):
     size = 0
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         assert arg_types[0] is type_impl.Int
         def _(bs):
@@ -310,7 +310,7 @@ class ArgGetter(_PythonFunction):
 @apply
 class ArgGetterGetItem(type_impl._Type):
     size = 0
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types == (type_impl.Int,)
         def _(bs):
             assert bs.flow.stack.pop() is type_impl.Int
@@ -326,7 +326,7 @@ class ArgGetterGetItem(type_impl._Type):
 @apply
 class ArgGetterLen(type_impl._Type):
     size = 0
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types == ()
         def _(bs):
             assert bs.flow.stack.pop() is self

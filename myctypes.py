@@ -20,7 +20,7 @@ class _FuncPtr(type_impl._Type):
     def __init__(self, (cdll, name)):
         type_impl._Type.__init__(self)
         self.func = cdll[name]
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         def _(bs):
             ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str or x is Raw or isinstance(x, _FuncPtr)])
             floats = len([x for x in arg_types if x is type_impl.Float])
@@ -102,7 +102,7 @@ class CDLL(type_impl._Type):
 @apply
 class RawCopyFromMeth(type_impl._Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 2
         assert arg_types[0] is Raw
         assert arg_types[1] is type_impl.Int
@@ -128,7 +128,7 @@ class RawCopyFromMeth(type_impl._Type):
 @apply
 class RawGetitemMeth(type_impl._Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         assert arg_types[0] is type_impl.Int
         def _(bs):
@@ -149,7 +149,7 @@ class RawGetitemMeth(type_impl._Type):
 @apply
 class RawSetitemMeth(type_impl._Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 2, arg_types
         assert arg_types[0] is type_impl.Int
         assert arg_types[1] is type_impl.Int
@@ -195,7 +195,7 @@ class Raw(type_impl._Type):
 @apply
 class RawType(type_impl._Type):
     size = 0
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         assert arg_types[0] is type_impl.Int
         def _(bs):

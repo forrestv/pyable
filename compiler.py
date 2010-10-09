@@ -19,7 +19,7 @@ from corepy.arch.x86_64.platform.linux.x86_64_exec import make_executable
 class Executable(object):
     def __init__(self):
         self.produced = util.cdict(self.produce)
-    def __call__(self, arg_types=()):
+    def call(self, arg_types=()):
         def _(bs):
             util.add_redirection(bs.code, lambda rdi: util.get_call(self.produced[arg_types]))
         return _
@@ -892,7 +892,7 @@ def translate(desc, flow, stack=None, this=None):
                 @bs.this.append
                 def _(bs, t=t):
                     arg_types = tuple(bs.flow.stack[-1 - i] for i, a in enumerate(t.args))[::-1]
-                    bs.this.append(bs.flow.stack[-1 - len(t.args)](arg_types))
+                    bs.this.append(bs.flow.stack[-1 - len(t.args)].call(arg_types))
             
         elif isinstance(t, ast.Tuple):
             if isinstance(t.ctx, ast.Load):

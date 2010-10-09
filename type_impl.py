@@ -55,7 +55,7 @@ class _Type(object):
 @apply
 class IntAbsMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -72,7 +72,7 @@ class IntAbsMeth(_Type):
 @apply
 class IntNonzeroMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -82,7 +82,7 @@ class IntNonzeroMeth(_Type):
 @apply
 class IntPosMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -92,7 +92,7 @@ class IntPosMeth(_Type):
 @apply
 class IntNegMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -105,7 +105,7 @@ class IntNegMeth(_Type):
 @apply
 class IntInvertMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -118,7 +118,7 @@ class IntInvertMeth(_Type):
 @apply
 class IntStrMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -198,7 +198,7 @@ class IntStrMeth(_Type):
 @apply
 class IntAddMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
@@ -219,7 +219,7 @@ class IntAddMeth(_Type):
 @apply
 class IntSubMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
@@ -240,7 +240,7 @@ class IntSubMeth(_Type):
 @apply
 class IntMulMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
@@ -261,7 +261,7 @@ class IntMulMeth(_Type):
 @apply
 class IntModMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
@@ -293,7 +293,7 @@ class _IntCmpMeths(_Type):
     def __init__(self, op_name):
         _Type.__init__(self)
         self.inst = self.insts[op_name]
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types == (Int,)
         def _(bs):
             assert bs.flow.stack.pop() is Int
@@ -320,7 +320,7 @@ IntCmpMeths = util.cdict(_IntCmpMeths)
 @apply
 class IntFloorDivMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
@@ -343,7 +343,7 @@ class IntFloorDivMeth(_Type):
 @apply
 class IntPowMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         def _(bs):
             other_type = bs.flow.stack.pop()
@@ -439,7 +439,7 @@ _Int = Int.__class__
 @apply
 class BoolStrMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -476,7 +476,7 @@ class Bool(_Int):
 @apply
 class FloatStrMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -551,7 +551,7 @@ class FloatStrMeth(_Type):
 @apply
 class FloatAddMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types in [(Int,), (Float,)]
         def _(bs):
             other = bs.flow.stack.pop()
@@ -574,7 +574,7 @@ class FloatAddMeth(_Type):
 @apply
 class FloatNegMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -588,7 +588,7 @@ class FloatNegMeth(_Type):
 @apply
 class FloatSubMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types in [(Int,), (Float,)]
         def _(bs):
             other = bs.flow.stack.pop()
@@ -611,7 +611,7 @@ class FloatSubMeth(_Type):
 @apply
 class FloatRSubMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types in [(Int,), (Float,)]
         def _(bs):
             other = bs.flow.stack.pop()
@@ -634,7 +634,7 @@ class FloatRSubMeth(_Type):
 @apply
 class FloatMulMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types in [(Int,), (Float,)]
         def _(bs):
             other = bs.flow.stack.pop()
@@ -657,7 +657,7 @@ class FloatMulMeth(_Type):
 @apply
 class FloatDivMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types in [(Int,), (Float,)]
         def _(bs):
             other = bs.flow.stack.pop()
@@ -680,7 +680,7 @@ class FloatDivMeth(_Type):
 @apply
 class FloatRDivMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types in [(Int,), (Float,)]
         def _(bs):
             other = bs.flow.stack.pop()
@@ -731,7 +731,7 @@ class _TupleGetitemMeth(_Type):
     def __init__(self, arg_types):
         self.arg_types = arg_types
         self.arg_size = sum(x.size for x in self.arg_types)
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types == (Int,)
         def _(bs):
             assert bs.flow.stack.pop() is Int
@@ -864,7 +864,7 @@ class ProtoObject(_Type):
     def __repr__(self):
         return self.name
         return "ProtoObject" + repr((self.name, self.bases, self.dict))
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         def _(bs):
             assert bs.flow.stack[-1 - len(arg_types)] is self
             bs.this.append(protoinstances[self].new(arg_types))
@@ -1203,7 +1203,7 @@ class ProtoInstance(_Type):
                 bs.code += isa.push(MemRef(registers.rsp, 8*arg_size+8+8+8))
             bs.flow.stack.extend(arg_types)
 
-            bs.this.append(bs.flow.stack[-2 - len(arg_types)]((self,) + arg_types))
+            bs.this.append(bs.flow.stack[-2 - len(arg_types)].call((self,) + arg_types))
             
             @bs.this.append
             def _(bs, arg_types=arg_types):
@@ -1374,7 +1374,7 @@ strings = util.cdict(lambda s: ctypes.create_string_buffer(struct.pack("L", len(
 @apply
 class StrStrMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -1384,7 +1384,7 @@ class StrStrMeth(_Type):
 @apply
 class StrGetitemMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         #assert not arg_types
         if arg_types == (Int,):
             def _(bs):
@@ -1753,7 +1753,7 @@ class StrGetitemMeth(_Type):
 @apply
 class StrOrdMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -1778,7 +1778,7 @@ class StrOrdMeth(_Type):
 @apply
 class StrLenMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -1804,7 +1804,7 @@ class StrLenMeth(_Type):
 @apply
 class StrNonZeroMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -1830,7 +1830,7 @@ class StrNonZeroMeth(_Type):
 @apply
 class StrJoinMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert len(arg_types) == 1
         def _(bs):
             def _(bs):
@@ -1914,7 +1914,7 @@ class _StrCmpMeth(_Type):
     def __init__(self, op_name):
         _Type.__init__(self)
         self.op_name = op_name
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types == (Str,)
         def _(bs):
             assert bs.flow.stack.pop() is Str
@@ -1986,7 +1986,7 @@ class _StrCmpMeth(_Type):
     def __init__(self, op_name):
         _Type.__init__(self)
         self.op_name = op_name
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types == (Str,)
         def _(bs):
             assert bs.flow.stack.pop() is Str
@@ -2071,7 +2071,7 @@ StrCmpMeths = util.cdict(_StrCmpMeth)
 @apply
 class StrAddMeth(_Type):
     size = 1
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert arg_types == (Str,)
         def _(bs):
             assert bs.flow.stack.pop() is Str
@@ -2230,7 +2230,7 @@ say_functions = util.cdict(_get_func_say)
 @apply
 class FunctionStr(_Type):
     size = 2
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
@@ -2254,7 +2254,7 @@ class FunctionStr(_Type):
                     else:
                         bs.this.append(Str.load_constant("<function %s at %i>" % (functions[value].name, value)))
                 return _
-            util.unlift(bs, _, "_Function.__call__")
+            util.unlift(bs, _, "_Function.call")
         return _
 
 @apply
@@ -2262,7 +2262,7 @@ class Function(_Type):
     size = 2
     def getattr___str__(self, bs): bs.flow.stack.append(FunctionStr)
     def getattr___repr__(self, bs): bs.flow.stack.append(FunctionStr)
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         def _(bs):
             assert bs.flow.stack[-1 - len(arg_types)] is self, bs.flow.stack[-1 - len(arg_types)]
             arg_size = sum(x.size for x in arg_types)
@@ -2273,7 +2273,7 @@ class Function(_Type):
                 def _(bs):
                     if isinstance(functions[value], str):
                         assert False, functions[value]
-                    bs.this.append(functions[value](arg_types))
+                    bs.this.append(functions[value].call(arg_types))
                     @bs.this.append
                     def _(bs):
                         for arg_type in arg_types[::-1]:
@@ -2305,9 +2305,9 @@ class Function(_Type):
                                     #    print "stack unrolled to", bs.flow.stack
                                     bs.flow.try_stack.pop()(bs)
                             return _
-                        util.unlift(bs, _, "_Function.__call__ (inner)")
+                        util.unlift(bs, _, "_Function.call (inner)")
                 return _
-            util.unlift(bs, _, "_Function.__call__")
+            util.unlift(bs, _, "_Function.call")
         return _
 
 @apply
@@ -2340,7 +2340,7 @@ class _Method(_Type):
             
             bs.flow.stack.append(self)
         return _
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         def _(bs):
             for arg in arg_types[::-1]:
                 assert bs.flow.stack.pop() is arg
@@ -2349,7 +2349,7 @@ class _Method(_Type):
             bs.flow.stack.append(self.self_type)
             for arg in arg_types:
                 bs.flow.stack.append(arg)
-            bs.this.append(Function((self.self_type,) + arg_types))
+            bs.this.append(Function.call((self.self_type,) + arg_types))
         return _
 
 methods = util.cdict(_Method)
@@ -2357,7 +2357,7 @@ methods = util.cdict(_Method)
 @apply
 class NoneStrMeth(_Type):
     size = 0
-    def __call__(self, arg_types):
+    def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
