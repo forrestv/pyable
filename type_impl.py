@@ -1314,6 +1314,22 @@ class ProtoInstance(_Type):
                             bs.code += isa.push(MemRef(registers.r14, 8 * (pos + i)))
                         bs.flow.stack.append(type)
                     else:
+                        if self.type is None:
+                            import mypyable
+                            bs.this.append(ast.Raise(
+                                type=ast.Call(
+                                    func=mypyable.AttributeError_impl.load,
+                                    args=[ast.Str(s=attr)],
+                                    keywords=[],
+                                    starargs=None,
+                                    kwargs=None,
+                                    ),
+                                inst=None,
+                                tback=None,
+                                ),
+                            )
+                            return
+
                         func1 = util.UpdatableMovRax(bs.code, 0)
                         bs.code += isa.push(registers.rax)
                         func2 = util.UpdatableMovRax(bs.code, 0)
