@@ -513,11 +513,11 @@ else:
     print "Be careful!"
     while True:
         try:
-            l = raw_input(">>> ")
-            if l == "":
+            _line = raw_input(">>> ")
+            if _line == "":
                 print
                 break
-            exec l
+            exec _line
         except Exception, e:
             try:
                 print "error:", e
