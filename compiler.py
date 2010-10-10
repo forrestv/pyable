@@ -261,6 +261,7 @@ class BlockStatus(object):
         pos = data_pos
         res = data.buffer_info()[0] + data_pos
         data_pos += len(self.program.render_code)
+        assert data_pos < len(data)
         #if data_pos % 512:
         #    data_pos += 512 - data_pos % 512
         #print "BUFFER", data[:data_pos]
@@ -285,7 +286,7 @@ class OffsetListProxy(object):
             item += self.offset
         return self.source.__getitem__(item)
 
-data = extarray('B', '\xff'*10000000)
+data = extarray('B', '\xff'*1000000)
 data.references = []
 data_pos = 0
 make_executable(*data.buffer_info())
@@ -881,12 +882,6 @@ def translate(desc, flow, stack=None, this=None):
             
             @bs.this.append
             def _(bs, t=t):
-                if len(t.args) == 1 and isinstance(t.args[0], (ast.Num, ast.Str)):
-                    c = bs.flow.stack[-1].call_const(t.args[0])
-                    if c is not None:
-                        bs.this.append(c)
-                        return
-                
                 bs.this.extend(t.args)
                 
                 @bs.this.append

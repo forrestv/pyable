@@ -3,6 +3,7 @@ from __future__ import division
 import ctypes
 import random
 import ast
+import struct
 
 import corepy.arch.x86_64.isa as isa
 import corepy.arch.x86_64.types.registers as registers
@@ -92,11 +93,17 @@ CDLLInsts = util.cdict(_CDLLInst)
 @apply
 class CDLL(type_impl._Type):
     size = 0
-    def call_const(self, a):
-        assert isinstance(a, ast.Str)
+    def call(self, arg_types):
+        assert arg_types == (type_impl.Str,)
         def _(bs):
+            assert bs.flow.stack.pop() is type_impl.Str
             assert bs.flow.stack.pop() is self
-            bs.flow.stack.append(CDLLInsts[a.s])
+            def _(value):
+                s = type_impl.Str.to_python(struct.pack("l", value))
+                def _(bs):
+                    bs.flow.stack.append(CDLLInsts[s])
+                return _
+            util.unlift(bs, _, "CDLL")
         return _
 
 @apply

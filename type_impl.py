@@ -46,8 +46,6 @@ class _Type(object):
             assert bs.flow.stack.pop() is self
             f(bs)
         return _
-    def call_const(self, c):
-        return None
     def to_python(self, data):
         return self
 #_Type = Type.__class__
