@@ -1241,9 +1241,9 @@ def translate(desc, flow, stack=None, this=None):
                                 def _(bs):
                                     bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8))
                                     
-                                    bs.code += isa.mov(registers.rdi, registers.r12)
-                                    bs.code += isa.mov(registers.rax, util.free_addr)
-                                    bs.code += isa.call(registers.rax)
+                                    #bs.code += isa.mov(registers.rdi, registers.r12)
+                                    #bs.code += isa.mov(registers.rax, util.free_addr)
+                                    #bs.code += isa.call(registers.rax)
                                     
                                     bs.code += isa.mov(registers.rax, MemRef(registers.r12, 16))
                                     bs.code += isa.mov(MemRef(registers.rbp, -8), registers.rax)
