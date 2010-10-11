@@ -1,4 +1,5 @@
 import ctypes
+import __pyable__
 #import ctypes.util
 
 #libc = ctypes.CDLL(ctypes.util.find_library("c"))
@@ -300,8 +301,7 @@ class list(object):
         return listiterator(self)
     def _grow(self):
         new_allocated = self._allocated * 2 + 1
-        import _pyable
-        new_store = _pyable.raw(4 * new_allocated)
+        new_store = __pyable__.raw(4 * new_allocated)
         if self._used:
             new_store.copy_from(self._store, 4 * self._used)
         self._allocated = new_allocated
@@ -356,8 +356,7 @@ class list(object):
             first = False
         r += ']'
         return r
-import _pyable
-_pyable.set_list_impl(list)
+__pyable__.set_list_impl(list)
 
 class dict(object):
     def __init__(self):
@@ -373,8 +372,7 @@ class dict(object):
             new_table.append([])
         
         new_allocated = self._allocated * 2 + 1
-        import _pyable
-        new_store = _pyable.raw(4 * new_allocated)
+        new_store = __pyable__.raw(4 * new_allocated)
         if self._used:
             new_store.copy_from(self._store, 4 * self._used)
         self._allocated = new_allocated
@@ -403,17 +401,13 @@ class dict(object):
                 return True
         return False
         
-_pyable.set_dict_impl(dict)
+__pyable__.set_dict_impl(dict)
 
 def len(o):
     return o.__len__()
 
 def eval(s):
-    return _pyable.eval(s)
-
-stdin = file_from_fileno(0, '<stdin>', 'r')
-stdout = file_from_fileno(1, '<stdout>', 'w')
-stderr = file_from_fileno(2, '<stderr>', 'w')
+    return __pyable__.eval(s)
 
 class BaseException(object):
     pass
@@ -429,26 +423,29 @@ class Exception(BaseException):
 
 class StopIteration(Exception):
     pass
-_pyable.set_StopIteration_impl(StopIteration)
+__pyable__.set_StopIteration_impl(StopIteration)
 
 class StandardError(Exception):
     pass
 
 class SyntaxError(StandardError):
     pass
-_pyable.set_SyntaxError_impl(SyntaxError)
+__pyable__.set_SyntaxError_impl(SyntaxError)
+
+class ImportError(StandardError):
+    pass
 
 class AssertionError(Exception):
     pass
-_pyable.set_AssertionError_impl(AssertionError)
+__pyable__.set_AssertionError_impl(AssertionError)
 
 class AttributeError(Exception):
     pass
-_pyable.set_AttributeError_impl(AttributeError)
+__pyable__.set_AttributeError_impl(AttributeError)
 
 class NameError(Exception):
     pass
-_pyable.set_NameError_impl(NameError)
+__pyable__.set_NameError_impl(NameError)
 
 class KeyError(Exception):
     pass
@@ -464,17 +461,25 @@ class IOError(EnvironmentError):
 
 
 class module(object):
-    pass
+    def __init__(self, name):
+        self.__name__ = name
+    def __repr__(self):
+        return "<module '" + self.__name__ + "'>"
 
-modules = {}
-
-paths = []
-paths.append("/usr/lib/python2.6/")
-paths.append("test/")
+sys = module('sys')
+sys.modules = {}
+sys.modules['sys'] = sys
+sys.stdin = file_from_fileno(0, '<stdin>', 'r')
+sys.stdout = file_from_fileno(1, '<stdout>', 'w')
+sys.stderr = file_from_fileno(2, '<stderr>', 'w')
+sys.path = []
+sys.path.append("/usr/lib/python2.6/")
+sys.path.append("test/")
+__pyable__.set_SysModule_impl(sys)
 
 def __import__(name):
-    if name in modules:
-        return modules[name]
+    if name in sys.modules:
+        return sys.modules[name]
     r = module()
     r.__name__ = name
     r.__doc__ = None
@@ -486,10 +491,10 @@ def __import__(name):
             continue
         f = f.read()
         exec f in None, r.__dict__
-        modules[name] = r
+        sys.modules[name] = r
         return r
     else:
-        raise ImportError()
+        raise ImportError(name)
     assert False
 
 def input():
@@ -497,13 +502,13 @@ def input():
 
 def raw_input(prompt=None):
     if prompt is not None:
-        stdout.write(prompt)
-        stdout.flush()
-    r = stdin.readline()
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+    r = sys.stdin.readline()
     return r
 
-if len(_pyable.args):
-    a = _pyable.args[0]
+if len(__pyable__.args):
+    a = __pyable__.args[0]
     try:
         exec open(a).read()
     except Exception, e:

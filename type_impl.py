@@ -47,7 +47,7 @@ class _Type(object):
             f(bs)
         return _
     def to_python(self, data):
-        return self
+        assert False
 #_Type = Type.__class__
 
 @apply
@@ -895,6 +895,8 @@ class ProtoObject(_Type):
         bs.this.append(Str.load_constant(self.name))
     def load(self, bs):
         bs.flow.stack.append(self)
+    def to_python(self, data):
+        return self
 
 name_bits = util.cdict(lambda name: 1 << random.randrange(64))
 
@@ -1099,17 +1101,8 @@ class Scope(object):
                         ))
                         return
                     slots = self.slots[slot_id]
-                    
-                    if slots is None:
-                        bs.code += isa.push(MemRef(registers.r12, 8))
-                        bs.flow.stack.append(ProtoInstance(None))
-                        bs.this.append(bs.flow.stack[-1].const_getattr(attr))
-                        return
-                    
-                    try:
-                        type, pos = slots[attr]
-                        if type is None: raise KeyError
-                    except KeyError:
+                    def fail():
+                      def _(bs):
                         bs.code += isa.mov(registers.r12, MemRef(registers.r12, 16)) # scope object
                         bs.code += isa.cmp(registers.r12, 0)
                         bs.code += isa.push(-1)
@@ -1119,6 +1112,18 @@ class Scope(object):
                         bs.code += isa.push(MemRef(registers.r12)) # slot id
                         bs.code += skip
                         util.unlift(bs, load_in, "Scope.get_name")
+                      return _
+                    if slots is None:
+                        bs.code += isa.push(MemRef(registers.r12, 8))
+                        bs.flow.stack.append(ProtoInstance(None))
+                        bs.this.append(bs.flow.stack[-1].const_getattr(attr, fail))
+                        return
+                    
+                    try:
+                        type, pos = slots[attr]
+                        if type is None: raise KeyError
+                    except KeyError:
+                        bs.this.append(fail())
                     else:
                         bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8))
                         for i in reversed(xrange(type.size)):
@@ -1285,7 +1290,7 @@ class ProtoInstance(_Type):
                 return _
             util.unlift(bs, _, "ProtoInstance.setattr_const_string")
         return _
-    def const_getattr(self, attr):
+    def const_getattr(self, attr, fail_func=None):
         if attr == '__class__':
             def _(bs):
                 assert bs.flow.stack.pop() is self
@@ -1302,32 +1307,20 @@ class ProtoInstance(_Type):
         def _(bs):
             assert bs.flow.stack.pop() is self
             
-            bs.code += isa.pop(registers.r12)
-            bs.code += isa.push(MemRef(registers.r12)) # slot id
+            bs.code += isa.pop(registers.r13)
+            bs.code += isa.push(MemRef(registers.r13)) # slot id
             def _(value):
                 def _(bs):
                     slots = protoslots[value]
                     if attr in slots:
                         type, pos = slots[attr]
-                        bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8))
+                        bs.code += isa.mov(registers.r14, MemRef(registers.r13, 8))
                         for i in xrange(type.size):
                             bs.code += isa.push(MemRef(registers.r14, 8 * (pos + i)))
                         bs.flow.stack.append(type)
                     else:
                         if self.type is None:
-                            import mypyable
-                            bs.this.append(ast.Raise(
-                                type=ast.Call(
-                                    func=mypyable.AttributeError_impl.load,
-                                    args=[ast.Str(s=attr)],
-                                    keywords=[],
-                                    starargs=None,
-                                    kwargs=None,
-                                    ),
-                                inst=None,
-                                tback=None,
-                                ),
-                            )
+                            bs.this.append(fail_func())
                             return
 
                         func1 = util.UpdatableMovRax(bs.code, 0)
@@ -1353,7 +1346,7 @@ class ProtoInstance(_Type):
                         
                         assert bs.flow.stack[-1] is Function
                         
-                        bs.code += isa.push(registers.r12)
+                        bs.code += isa.push(registers.r13)
                         bs.flow.stack.append(self)
                         
                         bs.this.append(methods[self].load())
@@ -1376,6 +1369,19 @@ class ProtoInstance(_Type):
         for name, (type, pos) in slots.iteritems():
             res[name] = type
         return res
+    def to_python(self, data):
+        return WrappedProtoInstance(self, data)
+
+class WrappedProtoInstance(object):
+    def __init__(self, type, data):
+        self.type, self.data = type, data
+    def load(self):
+        def _(bs):
+            for i in reversed(struct.unpack("%il" % self.type.size, self.data)):
+                bs.code += isa.push(i)
+            bs.flow.stack.append(self.type)
+        return _
+            
 
 # store slot in bs.flow.stack once we know it ... though it can change in functions and (undetectibly) other threads .. D:
 # i hate threads

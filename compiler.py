@@ -124,7 +124,7 @@ class NonGenerator(Executable):
                 
                 bs.code += isa.mov(registers.r12, type.id)
                 
-                assert not bs.flow.stack, bs.flow.stack
+                #assert not bs.flow.stack, bs.flow.stack
                 
                 # leave
                 bs.code += isa.mov(registers.rsp, registers.rbp)
@@ -684,10 +684,20 @@ def translate(desc, flow, stack=None, this=None):
                     bs.code += label
                 '''
         elif isinstance(t, ast.Print):
-            assert t.dest is None
+            import mypyable
+            bs.this.append(t.dest if t.dest is not None else ast.Attribute(
+                value=mypyable.SysModule_impl.load(),
+                attr="stdout",
+                ctx=ast.Load(),
+            ))
             for value in t.values:
-                bs.this.append(
-                    ast.Call(
+                bs.this.append(ast.Expr(ast.Call(
+                    func=ast.Attribute(
+                        value=util.dup,
+                        attr="write",
+                        ctx=ast.Load(),
+                        ),
+                    args=[ast.Call(
                         func=ast.Attribute(
                             value=value,
                             attr='__str__',
@@ -697,29 +707,28 @@ def translate(desc, flow, stack=None, this=None):
                         keywords=[],
                         starargs=None,
                         kwargs=None,
-                        ),
-                    )
-                @bs.this.append
-                def _(bs):
-                    type = bs.flow.stack.pop()
-                    
-                    assert type is type_impl.Str
-                    
-                    bs.code += isa.pop(registers.rdi)
-                    bs.code += isa.mov(registers.rax, util.print_string_addr)
-                    
-                    bs.code += isa.mov(registers.r12, registers.rsp)
-                    bs.code += isa.and_(registers.rsp, -16)
-                    bs.code += isa.call(registers.rax)
-                    bs.code += isa.mov(registers.rsp, registers.r12)
+                        )],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                )))
             if t.nl:
-                @bs.this.append
-                def _(bs):
-                    bs.code += isa.mov(registers.rax, util.print_nl_addr)
-                    bs.code += isa.mov(registers.r12, registers.rsp)
-                    bs.code += isa.and_(registers.rsp, -16)
-                    bs.code += isa.call(registers.rax)
-                    bs.code += isa.mov(registers.rsp, registers.r12)
+                bs.this.append(ast.Expr(ast.Call(
+                    func=ast.Attribute(
+                        value=util.dup,
+                        attr="write",
+                        ctx=ast.Load(),
+                        ),
+                    args=[ast.Str(s="\n")],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                )))
+            @bs.this.append
+            def _(bs):
+                 t = bs.flow.stack.pop()
+                 for i in xrange(t.size):
+                     bs.code += isa.pop(registers.rax)
         elif isinstance(t, ast.UnaryOp):
             if isinstance(t.op, ast.USub): r ="neg"
             elif isinstance(t.op, ast.UAdd): r = "pos"
@@ -1085,7 +1094,7 @@ def translate(desc, flow, stack=None, this=None):
                         value=_
                     ))
                     continue
-                if name.name == "_pyable":
+                if name.name == "__pyable__":
                     def _(bs):
                         import mypyable
                         bs.flow.stack.append(mypyable.PyableModule)
@@ -1218,15 +1227,19 @@ def translate(desc, flow, stack=None, this=None):
                             if locals_type is type_impl.DictProxy:
                                 @bs.this.append
                                 def _(bs):
-                                    bs.code += isa.mov(registers.rax, MemRef(registers.rbp, -8))
-                                    bs.code += isa.mov(registers.rax, MemRef(registers.rax, 16))
+                                    bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8))
+                                    
+                                    bs.code += isa.mov(registers.rdi, registers.r12)
+                                    bs.code += isa.mov(registers.rax, util.free_addr)
+                                    bs.code += isa.call(registers.rax)
+                                    
+                                    bs.code += isa.mov(registers.rax, MemRef(registers.r12, 16))
                                     bs.code += isa.mov(MemRef(registers.rbp, -8), registers.rax)
                     return _
                 util.unlift_noncached(bs, exec_it, "exec")
         elif isinstance(t, ast.TryFinally):
             @bs.flow.try_stack.append
             def _(bs, call_stack=list(bs.call_stack), flow=bs.flow.clone(), t=t):
-                # HACK, i don't want to think about the things this breaks
                 bs.call_stack[:] = call_stack
                 bs.flow.ctrl_stack[:] = flow.ctrl_stack
                 assert bs.flow.try_stack == flow.try_stack
@@ -1255,7 +1268,6 @@ def translate(desc, flow, stack=None, this=None):
                                 bs.code += isa.pop(registers.rax)
                         exc_type = bs.flow.stack[-1]
                         if catch_type.isinstance(exc_type) or catch_type is None:
-                            # HACK, i don't want to think about the things this breaks
                             bs.call_stack[:] = call_stack
                             bs.flow.ctrl_stack[:] = flow.ctrl_stack
                             assert bs.flow.try_stack == flow.try_stack
