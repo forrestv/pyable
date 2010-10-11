@@ -9,6 +9,7 @@ import time
 tests = []
 
 for item in glob.glob("test/*.py"):
+    if item == 'test/__pyable__.py': continue
     a = subprocess.Popen(["python", item], bufsize=2**16, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     b = subprocess.Popen(["python", "main.py", item], bufsize=2**16, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     tests.append((item, a, b))

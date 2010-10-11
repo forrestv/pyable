@@ -1,6 +1,6 @@
-import _pyable
-type = _pyable.type
-type_number = _pyable.type_number
+import __pyable__
+type = __pyable__.type
+type_number = __pyable__.type_number
 
 mytype = type("hi", None, None)
 
@@ -21,7 +21,7 @@ mytype.__init__ = g
 
 y = mytype()
 
-#print "_pyable", type_number(_pyable)
+#print "__pyable__", type_number(__pyable__)
 #print "1", type_number(1)
 #print "\"hi\"", type_number("hi")
 #print "type", type_number(type)

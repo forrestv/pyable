@@ -480,11 +480,10 @@ __pyable__.set_SysModule_impl(sys)
 def __import__(name):
     if name in sys.modules:
         return sys.modules[name]
-    r = module()
-    r.__name__ = name
+    r = module(name)
     r.__doc__ = None
     r.__package__ = None
-    for path in paths:
+    for path in sys.path:
         try:
             f = open(path + name + ".py")
         except IOError:

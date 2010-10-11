@@ -1,7 +1,7 @@
-import _pyable
+import __pyable__
 
-t1 = _pyable.raw(100)
-t2 = _pyable.raw(200)
+t1 = __pyable__.raw(100)
+t2 = __pyable__.raw(200)
 
 t1[50] = 4141
 t2[100] = 50

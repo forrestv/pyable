@@ -690,7 +690,19 @@ def translate(desc, flow, stack=None, this=None):
                 attr="stdout",
                 ctx=ast.Load(),
             ))
-            for value in t.values:
+            for i, value in enumerate(t.values):
+                if i:
+                    bs.this.append(ast.Expr(ast.Call(
+                        func=ast.Attribute(
+                            value=util.dup,
+                            attr="write",
+                            ctx=ast.Load(),
+                            ),
+                        args=[ast.Str(s=" ")],
+                        keywords=[],
+                        starargs=None,
+                        kwargs=None,
+                    )))
                 bs.this.append(ast.Expr(ast.Call(
                     func=ast.Attribute(
                         value=util.dup,

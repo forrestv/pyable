@@ -1,6 +1,6 @@
-import _pyable
+import __pyable__
 
-A = _pyable.type("a", None, None)
+A = __pyable__.type("a", None, None)
 
 def A___init__(self):
     print "hi!"
