@@ -321,6 +321,20 @@ def is_generator(x):
     assert isinstance(x, ast.FunctionDef)
     return _is_generator(x.body)
 
+def get_module(name):
+    if name == "ctypes":
+        def _(bs):
+            import myctypes
+            bs.flow.stack.append(myctypes.CtypesModule)
+        return _
+    elif name == "__pyable__":
+        def _(bs):
+            import mypyable
+            bs.flow.stack.append(mypyable.PyableModule)
+        return _
+    else:
+        return ast.Call(func=ast.Name(id='__import__', ctx=ast.Load()), args=[ast.Str(s=name)], keywords=[], starargs=None, kwargs=None)
+
 def translate(desc, flow, stack=None, this=None):
     #print "translate", desc, flow, stack, this
     bs = BlockStatus(flow.clone())    
@@ -336,10 +350,10 @@ def translate(desc, flow, stack=None, this=None):
     while True:
         t = bs.call_stack.pop()
         bs.this = []
-        if util.DEBUG:
-            print
-            print bs.call_stack
-            print util.dump(t)
+        #if util.DEBUG:
+        #    print
+        #    print bs.call_stack
+        #    print util.dump(t)
         
         if t is None:
             return bs.finalise(desc)
@@ -825,8 +839,8 @@ def translate(desc, flow, stack=None, this=None):
             
             @bs.this.append
             def _(bs, t=t, r=r):
-                if util.DEBUG:
-                    print "XXX", bs, t, r
+                #if util.DEBUG:
+                #    print "XXX", bs, t, r
                 # XXX should cache left/right
                 result_type = bs.flow.stack[-1]
                 if result_type is type_impl.NotImplementedType:
@@ -1036,35 +1050,37 @@ def translate(desc, flow, stack=None, this=None):
                 orelse=[],
                 ))
         elif isinstance(t, ast.List):
-            assert isinstance(t.ctx, ast.Load)
-            import mypyable
-            def _gettype(bs):
-                assert mypyable.list_impl is not None, "lists haven't been bootstrapped"
-                bs.flow.stack.append(mypyable.list_impl)
-                assert mypyable.list_impl.size == 0
-            bs.this.append(
-                ast.Call(
-                    func=_gettype,
-                    args=[],
-                    keywords=[],
-                    starargs=None,
-                    kwargs=None,
-                    ),
-                )
-            for e in t.elts:
-                bs.this.append(ast.Expr(
+            if isinstance(t.ctx, ast.Load):
+                import mypyable
+                def _gettype(bs):
+                    assert mypyable.list_impl is not None, "lists haven't been bootstrapped"
+                    bs.flow.stack.append(mypyable.list_impl)
+                    assert mypyable.list_impl.size == 0
+                bs.this.append(
                     ast.Call(
-                        func=ast.Attribute(
-                            value=util.dup,
-                            attr='append',
-                            ctx=ast.Load(),
-                            ),
-                        args=[e],
+                        func=_gettype,
+                        args=[],
                         keywords=[],
                         starargs=None,
                         kwargs=None,
                         ),
-                    ))
+                    )
+                for e in t.elts:
+                    bs.this.append(ast.Expr(
+                        ast.Call(
+                            func=ast.Attribute(
+                                value=util.dup,
+                                attr='append',
+                                ctx=ast.Load(),
+                                ),
+                            args=[e],
+                            keywords=[],
+                            starargs=None,
+                            kwargs=None,
+                            ),
+                        ))
+            else:
+                assert isinstance(t.ctx, ast.Store)
         elif isinstance(t, ast.Dict):
             import mypyable
             def _gettype(bs):
@@ -1097,34 +1113,28 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.Import):
             for name in t.names:
                 assert isinstance(name, ast.alias)
-                if name.name == "ctypes":
-                    def _(bs):
-                        import myctypes
-                        bs.flow.stack.append(myctypes.CtypesModule)
-                    bs.this.append(ast.Assign(
-                        targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
-                        value=_
-                    ))
-                    continue
-                if name.name == "__pyable__":
-                    def _(bs):
-                        import mypyable
-                        bs.flow.stack.append(mypyable.PyableModule)
-                    bs.this.append(ast.Assign(
-                        targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
-                        value=_
-                    ))
-                    continue
                 bs.this.append(ast.Assign(
                     targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
-                    value=ast.Call(func=ast.Name(id='__import__', ctx=ast.Load()), args=[ast.Str(s=name.name)], keywords=[], starargs=None, kwargs=None)
+                    value=get_module(name.name),
                 ))
         elif isinstance(t, ast.ImportFrom):
             assert t.level == 0
+            bs.this.append(get_module(t.module))
             for name in t.names:
                 assert isinstance(name, ast.alias)
-                if name.name:
-                    pass
+                bs.this.append(ast.Assign(
+                    targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
+                    value=ast.Attribute(
+                            value=util.dup,
+                            attr=name.name,
+                            ctx=ast.Load(),
+                            ),
+                ))
+            @bs.this.append
+            def _(bs):
+                 t = bs.flow.stack.pop()
+                 for i in xrange(t.size):
+                     bs.code += isa.pop(registers.rax)
         elif isinstance(t, ast.Attribute):
             if isinstance(t.ctx, ast.Load):
                 bs.this.append(t.value)

@@ -356,6 +356,13 @@ class list(object):
             first = False
         r += ']'
         return r
+    def __add__(self, other):
+        res = []
+        for item in self:
+            res.append(item)
+        for item in other:
+            res.append(item)
+        return res
 __pyable__.set_list_impl(list)
 
 class dict(object):
@@ -475,6 +482,7 @@ sys.stderr = file_from_fileno(2, '<stderr>', 'w')
 sys.path = []
 sys.path.append("/usr/lib/python2.6/")
 sys.path.append("test/")
+sys.path.append("lib/")
 __pyable__.set_SysModule_impl(sys)
 
 def __import__(name):
@@ -505,6 +513,8 @@ def raw_input(prompt=None):
         sys.stdout.flush()
     r = sys.stdin.readline()
     return r
+
+__name__ = "__main__"
 
 if len(__pyable__.args):
     a = __pyable__.args[0]
