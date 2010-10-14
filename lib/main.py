@@ -227,19 +227,45 @@ def range(start, end=None, step=1):
     return result
 
 class rangeiterator(object):
+    pass
+
+class rangeiteratordown(rangeiterator):
     def __init__(self, start, end, step):
-        assert step != 0, "rangeiterator step != 0"
+        assert step < 0
         self.pos = start
         self.end = end
         self.step = step
+    def __iter__(self):
+        return self
+    def __length_hint__(self):
+        if self.end >= self.pos:
+            return 0
+        return (self.pos - self.end - 1)//-self.step + 1
     def next(self):
-        old_pos = self.pos
-        end = self.end
-        step = self.step
-        if (step > 0 and old_pos >= end) or (step < 0 and old_pos <= end):
+        old = self.pos
+        if old <= self.end:
             raise StopIteration()
-        self.pos = old_pos + self.step
-        return old_pos
+        self.pos = old + self.step
+        return old
+
+class rangeiteratorup(rangeiterator):
+    def __init__(self, start, end, step):
+        assert step > 0
+        self.pos = start
+        self.end = end
+        self.step = step
+    def __iter__(self):
+        return self
+    def __length_hint__(self):
+        if self.end <= self.pos:
+            return 0
+        return (self.end - self.pos - 1)//self.step + 1
+    def next(self):
+        old = self.pos
+        if old >= self.end:
+            raise StopIteration()
+        self.pos = old + self.step
+        return old
 
 class xrange(object):
     def __init__(self, start, end=None, step=1):
@@ -251,7 +277,10 @@ class xrange(object):
         self.end = end
         self.step = step
     def __iter__(self):
-        return rangeiterator(self.start, self.end, self.step)
+        if self.step > 0:
+            return rangeiteratorup(self.start, self.end, self.step)
+        else:
+            return rangeiteratordown(self.start, self.end, self.step)
 
 #def xrange(start, end=None, step=1):
 #    assert step != 0, "xrange step != 0"

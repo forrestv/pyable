@@ -1081,6 +1081,41 @@ def translate(desc, flow, stack=None, this=None):
                         ))
             else:
                 assert isinstance(t.ctx, ast.Store)
+                bs.this.append(
+                    ast.Call(
+                        func=ast.Attribute(
+                            value=lambda bs: None,
+                            attr='__iter__',
+                            ctx=ast.Load(),
+                            ),
+                        args=[],
+                        keywords=[],
+                        starargs=None,
+                        kwargs=None,
+                        ),
+                    )
+                for e in t.elts:
+                    bs.this.append(
+                        ast.Assign(
+                            targets=[e],
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=util.dup,
+                                    attr='next',
+                                    ctx=ast.Load(),
+                                    ),
+                                args=[],
+                                keywords=[],
+                                starargs=None,
+                                kwargs=None,
+                                ),
+                            )
+                        )
+                @bs.this.append
+                def _(bs):
+                    type = bs.flow.stack.pop()
+                    for i in xrange(type.size):
+                        bs.code += isa.pop(registers.rax)
         elif isinstance(t, ast.Dict):
             import mypyable
             def _gettype(bs):

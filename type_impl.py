@@ -32,7 +32,7 @@ class _Type(object):
             bs.this.append(ast.Raise(
                 type=ast.Call(
                     func=mypyable.AttributeError_impl.load,
-                    args=[ast.Str(s=s)],
+                    args=[ast.Str(s="%r %r" % (self, s))],
                     keywords=[],
                     starargs=None,
                     kwargs=None,
