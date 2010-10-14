@@ -373,22 +373,13 @@ def translate(desc, flow, stack=None, this=None):
                 body=ast.Return(t.body),
                 decorator_list=[],
             )))
-            bs.code += isa.mov(registers.rax, key)
-            bs.code += isa.push(registers.rax)
-            bs.code += isa.mov(registers.rax, MemRef(registers.rbp, -8))
-            bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(type_impl.Function)
+            type_impl.Function.create(key)(bs)
         elif isinstance(t, ast.FunctionDef):
             alloc_locals(bs)
             def _(bs, t=t):
                 key = len(type_impl.functions)
                 type_impl.functions.append(Function(t))
-                bs.code += isa.mov(registers.rax, key)
-                bs.code += isa.push(registers.rax)
-                bs.code += isa.mov(registers.rax, MemRef(registers.rbp, -8))
-                bs.code += isa.push(registers.rax)
-                bs.flow.stack.append(type_impl.Function)
-            # could be optimized
+                type_impl.Function.create(key)(bs)
             bs.this.append(ast.Assign(
                 targets=[ast.Name(id=t.name, ctx=ast.Store())],
                 value=_,
@@ -421,11 +412,7 @@ def translate(desc, flow, stack=None, this=None):
                             
                             bs.this.append(target)
                     
-                    @bs.this.append
-                    def _(bs):
-                        type = bs.flow.stack.pop()
-                        for i in xrange(type.size):
-                            bs.code += isa.pop(registers.rax)
+                    bs.this.append(util.discard)
             else:
                 target = t.targets[0]
                 if bs.flow.class_stack:
@@ -441,12 +428,9 @@ def translate(desc, flow, stack=None, this=None):
                         )
                 bs.this.append(target)
         elif isinstance(t, ast.Expr):
+            # XXX handle __doc__ here?
             bs.this.append(t.value)
-            @bs.this.append
-            def _(bs, t=t):
-                type = bs.flow.stack.pop()
-                for i in xrange(type.size):
-                    bs.code += isa.pop(registers.rax)
+            bs.this.append(util.discard)
         elif isinstance(t, ast.Num):
             if isinstance(t.n, float):
                 o = type_impl.Float
@@ -750,11 +734,7 @@ def translate(desc, flow, stack=None, this=None):
                     starargs=None,
                     kwargs=None,
                 )))
-            @bs.this.append
-            def _(bs):
-                 t = bs.flow.stack.pop()
-                 for i in xrange(t.size):
-                     bs.code += isa.pop(registers.rax)
+            bs.this.append(util.discard)
         elif isinstance(t, ast.UnaryOp):
             if isinstance(t.op, ast.USub): r ="neg"
             elif isinstance(t.op, ast.UAdd): r = "pos"
@@ -900,9 +880,7 @@ def translate(desc, flow, stack=None, this=None):
                         assert False
                     util.add_redirection(bs.code, lambda rdi, flow=bs.flow.clone(): util.get_jmp(make_post(flow)))
                     bs.code += skip
-                    type = bs.flow.stack.pop()
-                    for i in xrange(type.size):
-                        bs.code += isa.pop(registers.rax)
+                    util.discard(bs)
             
             bs.this.append(t.values[-1])
             # these next two can be eliminated at the cost of branching
@@ -995,11 +973,7 @@ def translate(desc, flow, stack=None, this=None):
                 
                 bs.this.append(ast.Call(func=_, args=[_, _], keywords=[], starargs=None, kwargs=None, name="store"))
                 
-                @bs.this.append
-                def _(bs):
-                    type = bs.flow.stack.pop()
-                    for i in xrange(type.size):
-                        bs.code += isa.pop(registers.rax)
+                bs.this.append(util.discard)
             else:
                 assert False, t.ctx
         elif isinstance(t, ast.Continue):
@@ -1111,11 +1085,7 @@ def translate(desc, flow, stack=None, this=None):
                                 ),
                             )
                         )
-                @bs.this.append
-                def _(bs):
-                    type = bs.flow.stack.pop()
-                    for i in xrange(type.size):
-                        bs.code += isa.pop(registers.rax)
+                bs.this.append(util.discard)
         elif isinstance(t, ast.Dict):
             import mypyable
             def _gettype(bs):
@@ -1165,11 +1135,7 @@ def translate(desc, flow, stack=None, this=None):
                             ctx=ast.Load(),
                             ),
                 ))
-            @bs.this.append
-            def _(bs):
-                 t = bs.flow.stack.pop()
-                 for i in xrange(t.size):
-                     bs.code += isa.pop(registers.rax)
+            bs.this.append(util.discard)
         elif isinstance(t, ast.Attribute):
             if isinstance(t.ctx, ast.Load):
                 bs.this.append(t.value)
@@ -1337,9 +1303,7 @@ def translate(desc, flow, stack=None, this=None):
                             bs.this = []
                             
                             if handler.name is None:
-                                bs.flow.stack.pop()
-                                for i in xrange(exc_type.size):
-                                    bs.code += isa.pop(registers.rax)
+                                util.discard(bs)
                             else:
                                 bs.this.append(handler.name)
                             
@@ -1355,9 +1319,7 @@ def translate(desc, flow, stack=None, this=None):
             @util.memoize
             def make_c_normal(flow, stack=list(bs.call_stack), number=number, t=t):
                 def _(bs):
-                    type = bs.flow.stack.pop()
-                    for i in xrange(type.size):
-                        bs.code += isa.pop(registers.rax)
+                    util.discard(bs)
                     bs.flow.return_stack.pop()
                     removed = bs.flow.ctrl_stack.pop()
                     assert removed[2] == number
@@ -1369,9 +1331,7 @@ def translate(desc, flow, stack=None, this=None):
             @util.memoize
             def make_c(flow, stack=list(bs.call_stack), number=number):
                 def _(bs):
-                    type = bs.flow.stack.pop()
-                    for i in xrange(type.size):
-                        bs.code += isa.pop(registers.rax)
+                    util.discard(bs)
                     bs.flow.return_stack.pop()
                     removed = bs.flow.ctrl_stack.pop()
                     assert removed[2] == number
@@ -1386,10 +1346,7 @@ def translate(desc, flow, stack=None, this=None):
                     def _(bs):
                         import mypyable
                         if mypyable.StopIteration_impl.isinstance(bs.flow.stack[-1]):
-                            # pop StopIteration
-                            type = bs.flow.stack.pop()
-                            for i in xrange(type.size):
-                                bs.code += isa.pop(registers.rax)
+                            util.discard(bs) # pop StopIteration
                             @bs.this.append
                             def _(bs):
                                 util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c_normal(bs.flow)))

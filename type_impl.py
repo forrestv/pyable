@@ -2329,6 +2329,14 @@ class Function(_Type):
                 return _
             util.unlift(bs, _, "_Function.call")
         return _
+    def create(self, key):
+        def _(bs):
+            bs.code += isa.mov(registers.rax, key)
+            bs.code += isa.push(registers.rax)
+            bs.code += isa.mov(registers.rax, MemRef(registers.rbp, -8))
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(self)
+        return _
 
 @apply
 class GeneratorNext(_Type):
@@ -2347,10 +2355,7 @@ class _Method(_Type):
     def getattr___str__(self, bs):
         bs.flow.stack.append(Function)
         bs.flow.stack.append(self.self_type)
-        
-        type = bs.flow.stack.pop()
-        for i in xrange(type.size):
-            bs.code += isa.pop(registers.rax)
+        util.discard(bs)
         assert bs.flow.stack.pop() is Function
         bs.flow.stack.append(FunctionStr)
     def load(self):

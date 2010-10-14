@@ -388,6 +388,10 @@ def dup(bs):
     push(bs, a)
     push(bs, a)
 
+def discard(bs):
+    type = bs.flow.stack.pop()
+    bs.code += isa.add(registers.rsp, 8*type.size)
+
 if __name__ == "__main__":
     print repr(get_jmp(0))
     print repr(get_call(0))
