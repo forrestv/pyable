@@ -347,6 +347,8 @@ def translate(desc, flow, stack=None, this=None):
     bs.call_stack = new_stack
     del this, new_stack
     
+    bs.desc = util.dump(bs.call_stack)
+    
     while True:
         t = bs.call_stack.pop()
         bs.this = []
@@ -359,6 +361,9 @@ def translate(desc, flow, stack=None, this=None):
             return bs.finalise(desc)
         elif callable(t):
             t(bs)
+            #print
+            #print bs.flow.stack, bs.this, bs.call_stack, bs.desc
+            #print
         elif isinstance(t, list):
             assert not bs.this
             bs.this = t
@@ -393,26 +398,24 @@ def translate(desc, flow, stack=None, this=None):
             bs.this.append(t.value)
             
             if len(t.targets) > 1:
-                @bs.this.append
-                def _(bs, t=t):
-                    for target in t.targets:
-                        assert isinstance(target.ctx, ast.Store)
-                        
-                        @bs.this.append
-                        def _(bs, target=target):
-                            type = bs.flow.stack[-1]
-                            
-                            for i in xrange(type.size):
-                                bs.code += isa.push(MemRef(registers.rsp, 8*type.size - 8))
-                            
-                            bs.flow.stack.append(type)
-                            
-                            if bs.flow.class_stack:
-                                assert False
-                            
-                            bs.this.append(target)
+                for target in t.targets:
+                    assert isinstance(target.ctx, ast.Store)
                     
-                    bs.this.append(util.discard)
+                    @bs.this.append
+                    def _(bs, target=target):
+                        type = bs.flow.stack[-1]
+                        
+                        for i in xrange(type.size):
+                            bs.code += isa.push(MemRef(registers.rsp, 8*type.size - 8))
+                        
+                        bs.flow.stack.append(type)
+                        
+                        if bs.flow.class_stack:
+                            assert False
+                        
+                        bs.this.append(target)
+                
+                bs.this.append(util.discard)
             else:
                 target = t.targets[0]
                 if bs.flow.class_stack:
@@ -433,12 +436,11 @@ def translate(desc, flow, stack=None, this=None):
             bs.this.append(util.discard)
         elif isinstance(t, ast.Num):
             if isinstance(t.n, float):
-                o = type_impl.Float
+                bs.this.append(type_impl.Float.load_constant(t.n))
             elif isinstance(t.n, int):
-                o = type_impl.Int
+                bs.this.append(type_impl.Int.load_constant(t.n))
             else:
                 assert False, t.n
-            bs.this.append(o.load_constant(t.n))
         elif isinstance(t, ast.Name):
             if isinstance(t.ctx, ast.Load):
                 if t.id == 'None':
@@ -1290,7 +1292,7 @@ def translate(desc, flow, stack=None, this=None):
                             for i in xrange(catch_type.size):
                                 bs.code += isa.pop(registers.rax)
                         exc_type = bs.flow.stack[-1]
-                        if catch_type.isinstance(exc_type) or catch_type is None:
+                        if catch_type is None or catch_type.isinstance(exc_type):
                             bs.call_stack[:] = call_stack
                             bs.flow.ctrl_stack[:] = flow.ctrl_stack
                             assert bs.flow.try_stack == flow.try_stack

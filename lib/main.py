@@ -342,6 +342,10 @@ class list(object):
         self._used += 1
         return self
     def __getitem__(self, index):
+        try:
+            index.real
+        except:
+            return self*1
         if index < 0:
             index += self._used
         if index < 0 or index >= self._used:
@@ -508,10 +512,11 @@ sys.modules['sys'] = sys
 sys.stdin = file_from_fileno(0, '<stdin>', 'r')
 sys.stdout = file_from_fileno(1, '<stdout>', 'w')
 sys.stderr = file_from_fileno(2, '<stderr>', 'w')
+sys.argv = []
 sys.path = []
-sys.path.append("/usr/lib/python2.6/")
 sys.path.append("test/")
 sys.path.append("lib/")
+sys.path.append("/usr/lib/python2.6/")
 __pyable__.set_SysModule_impl(sys)
 
 def __import__(name):

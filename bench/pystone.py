@@ -32,7 +32,7 @@ Version History:
 
 """
 
-LOOPS = 50000
+LOOPS = 1000000
 
 from time import clock
 
@@ -59,12 +59,14 @@ FALSE = 0
 
 def main(loops=LOOPS):
     benchtime, stones = pystones(loops)
-    print "Pystone(%s) time for %d passes = %g" % \
-          (__version__, loops, benchtime)
-    print "This machine benchmarks at %g pystones/second" % stones
+    print __version__, loops, benchtime, stones
+    #print "Pystone(%s) time for %d passes = %g" % \
+    #      (__version__, loops, benchtime)
+    #print "This machine benchmarks at %g pystones/second" % stones
 
 
 def pystones(loops=LOOPS):
+    Proc0(5)
     return Proc0(loops)
 
 IntGlob = 0

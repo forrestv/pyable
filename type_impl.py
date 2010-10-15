@@ -32,7 +32,7 @@ class _Type(object):
             bs.this.append(ast.Raise(
                 type=ast.Call(
                     func=mypyable.AttributeError_impl.load,
-                    args=[ast.Str(s="%r %r" % (self, s))],
+                    args=[ast.Str(s="<%r>.%r" % (self, s))],
                     keywords=[],
                     starargs=None,
                     kwargs=None,
@@ -698,6 +698,43 @@ class FloatRDivMeth(_Type):
             bs.flow.stack.append(Float)
         return _
 
+class _FloatCmpMeths(_Type):
+    size = 1
+    insts = {
+        'lt': isa.jl,
+        'gt': isa.jg,
+        'ge': isa.jge,
+        'le': isa.jle,
+        'ne': isa.jne,
+        'eq': isa.je,
+    }
+    def __init__(self, op_name):
+        _Type.__init__(self)
+        self.inst = self.insts[op_name]
+    def call(self, arg_types):
+        assert arg_types == (Float,)
+        def _(bs):
+            assert bs.flow.stack.pop() is Float
+            bs.code += isa.pop(registers.rbx)
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rax)
+            
+            bs.code += isa.cmp(registers.rax, registers.rbx)
+            bs.code += isa.mov(registers.rcx, 1)
+            
+            label = bs.program.get_unique_label()
+            
+            bs.code += self.inst(label)
+            
+            bs.code += isa.mov(registers.rcx, 0)
+            
+            bs.code += label
+            
+            bs.code += isa.push(registers.rcx)
+            bs.flow.stack.append(Bool)
+        return _
+FloatCmpMeths = util.cdict(_FloatCmpMeths)
+
 @apply
 class Float(_Type):
     size = 1
@@ -723,6 +760,13 @@ class Float(_Type):
     
     def getattr___div__(self, bs): bs.flow.stack.append(FloatDivMeth)
     def getattr___rdiv__(self, bs): bs.flow.stack.append(FloatRDivMeth)
+    
+    def getattr___gt__(self, bs): bs.flow.stack.append(FloatCmpMeths['gt'])
+    def getattr___lt__(self, bs): bs.flow.stack.append(FloatCmpMeths['lt'])
+    def getattr___ge__(self, bs): bs.flow.stack.append(FloatCmpMeths['ge'])
+    def getattr___le__(self, bs): bs.flow.stack.append(FloatCmpMeths['le'])
+    def getattr___eq__(self, bs): bs.flow.stack.append(FloatCmpMeths['eq'])
+    def getattr___ne__(self, bs): bs.flow.stack.append(FloatCmpMeths['ne'])
 
 class _TupleGetitemMeth(_Type):
     size = 1
@@ -1315,7 +1359,7 @@ class ProtoInstance(_Type):
                     if attr in slots:
                         type, pos = slots[attr]
                         bs.code += isa.mov(registers.r14, MemRef(registers.r13, 8))
-                        for i in xrange(type.size):
+                        for i in reversed(xrange(type.size)):
                             bs.code += isa.push(MemRef(registers.r14, 8 * (pos + i)))
                         bs.flow.stack.append(type)
                     else:
@@ -2254,9 +2298,14 @@ class FunctionStr(_Type):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
-            bs.code += isa.pop(registers.rax)
+            #bs.code += isa.ud2()
+            bs.code += isa.add(registers.rsp, 8)
             def _(value):
                 def _(bs):
+                    if value >= len(functions):
+                        bs.this.append(Str.load_constant("<function %s at %i>" % ("???", value)))
+                        return
+                        
                     if isinstance(functions[value], str):
                         import mypyable
                         bs.this.append(ast.Raise(
@@ -2419,14 +2468,10 @@ class ProtoSlice(_Type):
         return _
     def getattr_start(self, bs):
         bs.flow.stack.extend(self.types)
-        for i in xrange(bs.flow.stack.pop().size):
-            bs.code += isa.pop(registers.rax)
-        for i in xrange(bs.flow.stack.pop().size):
-            bs.code += isa.pop(registers.rax)
+        util.discard2()
     def getattr_stop(self, bs):
         bs.flow.stack.extend(self.types)
-        for i in xrange(bs.flow.stack.pop().size):
-            bs.code += isa.pop(registers.rax)
+        util.discard()
         util.rem1(bs)
     def getattr_step(self, bs):
         bs.flow.stack.extend(self.types)

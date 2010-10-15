@@ -392,6 +392,11 @@ def discard(bs):
     type = bs.flow.stack.pop()
     bs.code += isa.add(registers.rsp, 8*type.size)
 
+def discard2(bs):
+    type = bs.flow.stack.pop()
+    type1 = bs.flow.stack.pop()
+    bs.code += isa.add(registers.rsp, 8*(type.size+type1.size))
+
 if __name__ == "__main__":
     print repr(get_jmp(0))
     print repr(get_call(0))
