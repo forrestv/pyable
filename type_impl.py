@@ -194,6 +194,27 @@ class IntStrMeth(_Type):
         return _
 
 @apply
+class IntAndMeth(_Type):
+    size = 1
+    def call(self, arg_types):
+        assert len(arg_types) == 1
+        def _(bs):
+            other_type = bs.flow.stack.pop()
+            assert bs.flow.stack.pop() is self
+            if other_type is not Int and other_type is not Bool:
+                for i in xrange(other_type.size):
+                    bs.code += isa.pop(registers.rax)
+                bs.code += isa.pop(registers.rax)
+                bs.flow.stack.append(NotImplementedType)
+                return
+            bs.code += isa.pop(registers.rbx)
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.and_(registers.rax, registers.rbx)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Int)
+        return _
+
+@apply
 class IntAddMeth(_Type):
     size = 1
     def call(self, arg_types):
@@ -372,50 +393,31 @@ class IntPowMeth(_Type):
 @apply
 class Int(_Type):
     size = 1
-    def getattr_numerator(self, bs):
-        bs.flow.stack.append(Int)
+    def getattr_numerator(self, bs): bs.flow.stack.append(Int)
     def getattr_denominator(self, bs):
-        bs.code += isa.pop(registers.rax)
-        bs.code += isa.push(1)
+        bs.code += isa.mov(MemRef(registers.rsp), 1)
         bs.flow.stack.append(Int)
-    def getattr_real(self, bs):
-        bs.flow.stack.append(Int)
+    def getattr_real(self, bs): bs.flow.stack.append(Int)
     def getattr_imag(self, bs):
-        bs.code += isa.pop(registers.rax)
-        bs.code += isa.push(0)
+        bs.code += isa.mov(MemRef(registers.rsp), 0)
         bs.flow.stack.append(Int)
-    def getattr___abs__(self, bs):
-        bs.flow.stack.append(IntAbsMeth)
-    def getattr___nonzero__(self, bs):
-        bs.flow.stack.append(IntNonzeroMeth)
-    def getattr___str__(self, bs):
-        bs.flow.stack.append(IntStrMeth)
-    def getattr___repr__(self, bs):
-        bs.flow.stack.append(IntStrMeth)
-    def getattr___neg__(self, bs):
-        bs.flow.stack.append(IntNegMeth)
-    def getattr___pos__(self, bs):
-        bs.flow.stack.append(IntPosMeth)
-    def getattr___hash__(self, bs):
-        bs.flow.stack.append(IntPosMeth)
-    def getattr___int__(self, bs):
-        bs.flow.stack.append(IntPosMeth)
-    def getattr___invert__(self, bs):
-        bs.flow.stack.append(IntInvertMeth)
-    def getattr___add__(self, bs):
-        bs.flow.stack.append(IntAddMeth)
-    def getattr___sub__(self, bs):
-        bs.flow.stack.append(IntSubMeth)
-    def getattr___mul__(self, bs):
-        bs.flow.stack.append(IntMulMeth)
-    def getattr___div__(self, bs):
-        bs.flow.stack.append(IntFloorDivMeth) # fixme
-    def getattr___floordiv__(self, bs):
-        bs.flow.stack.append(IntFloorDivMeth)
-    def getattr___mod__(self, bs):
-        bs.flow.stack.append(IntModMeth)
-    def getattr___pow__(self, bs):
-        bs.flow.stack.append(IntPowMeth)
+    def getattr___abs__(self, bs): bs.flow.stack.append(IntAbsMeth)
+    def getattr___nonzero__(self, bs): bs.flow.stack.append(IntNonzeroMeth)
+    def getattr___str__(self, bs): bs.flow.stack.append(IntStrMeth)
+    def getattr___repr__(self, bs): bs.flow.stack.append(IntStrMeth)
+    def getattr___neg__(self, bs): bs.flow.stack.append(IntNegMeth)
+    def getattr___pos__(self, bs): bs.flow.stack.append(IntPosMeth)
+    def getattr___hash__(self, bs): bs.flow.stack.append(IntPosMeth)
+    def getattr___int__(self, bs): bs.flow.stack.append(IntPosMeth)
+    def getattr___invert__(self, bs): bs.flow.stack.append(IntInvertMeth)
+    def getattr___and__(self, bs): bs.flow.stack.append(IntAndMeth)
+    def getattr___add__(self, bs): bs.flow.stack.append(IntAddMeth)
+    def getattr___sub__(self, bs): bs.flow.stack.append(IntSubMeth)
+    def getattr___mul__(self, bs): bs.flow.stack.append(IntMulMeth)
+    def getattr___div__(self, bs): bs.flow.stack.append(IntFloorDivMeth) # fixme
+    def getattr___floordiv__(self, bs): bs.flow.stack.append(IntFloorDivMeth)
+    def getattr___mod__(self, bs): bs.flow.stack.append(IntModMeth)
+    def getattr___pow__(self, bs): bs.flow.stack.append(IntPowMeth)
     def getattr___gt__(self, bs): bs.flow.stack.append(IntCmpMeths['gt'])
     def getattr___lt__(self, bs): bs.flow.stack.append(IntCmpMeths['lt'])
     def getattr___ge__(self, bs): bs.flow.stack.append(IntCmpMeths['ge'])

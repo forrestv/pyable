@@ -13,7 +13,7 @@ def sleep(seconds):
 def time():
     b = ctypes.create_string_buffer(16)
     libc.gettimeofday(b, None)
-    return b.int_at(0) + 1e-6 * b.int_at(8)
+    return b.int_at(0) + 1e-6 * (b.int_at(8) & 0xffffffff)
 
 if __name__ == "__main__":
     def main():
