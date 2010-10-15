@@ -398,6 +398,8 @@ class Int(_Type):
         bs.flow.stack.append(IntPosMeth)
     def getattr___hash__(self, bs):
         bs.flow.stack.append(IntPosMeth)
+    def getattr___int__(self, bs):
+        bs.flow.stack.append(IntPosMeth)
     def getattr___invert__(self, bs):
         bs.flow.stack.append(IntInvertMeth)
     def getattr___add__(self, bs):
@@ -470,6 +472,18 @@ class Bool(_Int):
         return _
     def getattr___str__(self, bs):
         bs.flow.stack.append(BoolStrMeth)
+
+@apply
+class FloatIntMeth(_Type):
+    size = 1
+    def call(self, arg_types):
+        assert not arg_types
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.cvtsd2si(registers.rax, MemRef(registers.rsp))
+            bs.code += isa.mov(MemRef(registers.rsp), registers.rax)
+            bs.flow.stack.append(Int)
+        return _
 
 @apply
 class FloatStrMeth(_Type):
@@ -767,6 +781,8 @@ class Float(_Type):
     def getattr___le__(self, bs): bs.flow.stack.append(FloatCmpMeths['le'])
     def getattr___eq__(self, bs): bs.flow.stack.append(FloatCmpMeths['eq'])
     def getattr___ne__(self, bs): bs.flow.stack.append(FloatCmpMeths['ne'])
+    
+    def getattr___int__(self, bs): bs.flow.stack.append(FloatIntMeth)
 
 class _TupleGetitemMeth(_Type):
     size = 1

@@ -23,7 +23,7 @@ class _FuncPtr(type_impl._Type):
         self.func = cdll[name]
     def call(self, arg_types):
         def _(bs):
-            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str or x is Raw or isinstance(x, _FuncPtr)])
+            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str or x is Raw or x is type_impl.NoneType or isinstance(x, _FuncPtr)])
             floats = len([x for x in arg_types if x is type_impl.Float])
             floats_orig = floats
             pos = 0
@@ -38,6 +38,9 @@ class _FuncPtr(type_impl._Type):
                     ints -= 1
                     bs.code += isa.mov(int_regs[ints], MemRef(registers.rsp, pos))
                     pos += 8
+                elif type is type_impl.NoneType:
+                    ints -= 1
+                    bs.code += isa.mov(int_regs[ints], 0)
                 elif type is Raw:
                     ints -= 1
                     bs.code += isa.mov(int_regs[ints], MemRef(registers.rsp, pos))
@@ -176,6 +179,29 @@ class RawSetitemMeth(type_impl._Type):
             
             type_impl.NoneType.load()(bs)
         return _
+
+@apply
+class RawIntAt(type_impl._Type):
+    size = 1
+    def call(self, arg_types):
+        assert len(arg_types) == 1
+        assert arg_types[0] is type_impl.Int
+        def _(bs):
+            assert bs.flow.stack.pop() is type_impl.Int
+            bs.code += isa.pop(registers.rcx)
+            assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rbx)
+            
+            bs.code += isa.add(registers.rbx, registers.rcx)
+            bs.code += isa.add(registers.rbx, 8)
+            
+            bs.code += isa.mov(registers.rax, MemRef(registers.rbx))
+            
+            bs.code += isa.push(registers.rax)
+            
+            bs.flow.stack.append(type_impl.Int)
+        return _
+
 @apply
 class Raw(type_impl._Type):
     size = 1
@@ -184,6 +210,7 @@ class Raw(type_impl._Type):
     #def getattr_load_object(self, bs): bs.flow.stack.append(RawLoadObjectMeth)
     #def getattr_store_object(self, bs): bs.flow.stack.append(RawStoreObjectMeth)
     #def getattr_copy_from(self, bs): bs.flow.stack.append(RawCopyFromMeth)
+    def getattr_int_at(self, bs): bs.flow.stack.append(RawIntAt)
     def getattr_raw(self, bs):
         bs.code += isa.pop(registers.r12)
         bs.code += isa.mov(registers.rdi, MemRef(registers.r12))

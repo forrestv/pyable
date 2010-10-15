@@ -198,8 +198,8 @@ def id(x):
 def input(prompt=None):
     pass
 
-class int(object):
-    pass
+def int(object):
+    return object.__int__()
 
 def isinstance(object, classinfo):
     return issubclass(type(object), classinfo)

@@ -2778,8 +2778,8 @@ class cvtps2pi(DispatchInstruction):
 class cvtsd2si(DispatchInstruction):
   dispatch = (
     # TODO - reg64 version defined by intel manuals but not AMD
-    #(reg64_xmm,      {'opcode':[0x0F, 0x2D], 'modrm':None, 'prefix':[0xF2]}),
-    #(reg64_mem64,    {'opcode':[0x0F, 0x2D], 'modrm':None, 'prefix':[0xF2]}),
+    (reg64_xmm,      {'opcode':[0x0F, 0x2D], 'modrm':None, 'prefix':[0xF2]}),
+    (reg64_mem64,    {'opcode':[0x0F, 0x2D], 'modrm':None, 'prefix':[0xF2]}),
     (reg32_xmm,      {'opcode':[0x0F, 0x2D], 'modrm':None, 'prefix':[0xF2]}),
     (reg32_mem64,    {'opcode':[0x0F, 0x2D], 'modrm':None, 'prefix':[0xF2]}))
   arch_ext = 2
