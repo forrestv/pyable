@@ -14,11 +14,13 @@ import compiler
 
 id_to_type = {}
 
+max_size = 4
+
 def number(inst):
     inst.id = len(id_to_type)
     assert inst.id not in id_to_type
     id_to_type[inst.id] = inst
-    assert inst.size <= 4
+    assert inst.size <= max_size
 
 #@apply
 class _Type(object):
@@ -429,9 +431,9 @@ class Int(_Type):
         assert isinstance(value, int)
         value = int(value)
         def _(bs):
-            bs.code += isa.mov(registers.rax, util.fake_int(value))
+            bs.code += isa.mov(registers.rax, value)
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(self)
+            bs.flow.stack.append2(self, value)
         return _
     def to_python(self, data):
         i, = struct.unpack("l", data)
@@ -464,13 +466,13 @@ class Bool(_Int):
         def _(bs):
             bs.code += isa.mov(registers.rax, 0)
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(self)
+            bs.flow.stack.append2(self, False)
         return _
     def load_true(self):
         def _(bs):
             bs.code += isa.mov(registers.rax, 1)
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(self)
+            bs.flow.stack.append2(self, True)
         return _
     def getattr___str__(self, bs):
         bs.flow.stack.append(BoolStrMeth)
@@ -760,7 +762,7 @@ class Float(_Type):
         def _(bs):
             bs.code += isa.mov(registers.rax, struct.unpack("l", struct.pack("d", value))[0])
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(self)
+            bs.flow.stack.append2(self, value)
         return _
     def getattr___str__(self, bs): bs.flow.stack.append(FloatStrMeth)
     def getattr___neg__(self, bs): bs.flow.stack.append(FloatNegMeth)
@@ -1062,12 +1064,40 @@ class Scope(object):
             util.unlift(bs, store_in, "Scope.set_global")
         return _
     def set_name(self, attr):
+        from objects.upperdict import builtin
+        return builtin.set_name(attr)
         def _(bs):
+            #bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
+            #bs.code += isa.push(MemRef(registers.r12)) # slot id
+            
             bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
+            bs.code += isa.cmp(registers.r12, 0)
+            bs.code += isa.push(-1)
+            skip = bs.program.get_unique_label()
+            bs.code += isa.je(skip)
+            bs.code += isa.pop(registers.rax)
             bs.code += isa.push(MemRef(registers.r12)) # slot id
+            bs.code += skip
             
             def store_in(slot_id):
                 def _(bs):
+                    if slot_id == -1:
+                        from objects.upperdict import builtin
+                        bs.this.append(builtin.set_name(attr))
+                        return
+                        import mypyable
+                        bs.this.append(ast.Raise(
+                            type=ast.Call(
+                                func=mypyable.NameError_impl.load,
+                                args=[ast.Str(s=attr)],
+                                keywords=[],
+                                starargs=None,
+                                kwargs=None,
+                                ),
+                            inst=None,
+                            tback=None,
+                        ))
+                        return
                     slots = self.slots[slot_id]
                     if slots is None: # dictproxy
                         bs.code += isa.push(MemRef(registers.r12, 8))
@@ -1126,9 +1156,11 @@ class Scope(object):
             util.unlift(bs, store_in, "Scope.set_name")
         return _
     def get_name(self, attr):
+        from objects.upperdict import builtin
+        return builtin.get_name(attr)
         bits = name_bits[attr]
         def _(bs):
-            bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
+            #bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
             #loop = bs.program.get_unique_label()
             #bs.code += loop
             #bs.code += isa.cmp(registers.r12, 0)
@@ -1142,13 +1174,25 @@ class Scope(object):
             #bs.code += isa.mov(registers.r12, MemRef(registers.r12, 16))
             #bs.code += isa.jmp(loop)
             #bs.code += skip
-            bs.code += isa.mov(registers.rax, MemRef(registers.r12)) # new
-            bs.code += isa.push(registers.rax) # slot id
+            #bs.code += isa.mov(registers.rax, MemRef(registers.r12)) # new
+            #bs.code += isa.push(registers.rax) # slot id
             
+            
+            bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
+            bs.code += isa.cmp(registers.r12, 0)
+            bs.code += isa.push(-1)
+            skip = bs.program.get_unique_label()
+            bs.code += isa.je(skip)
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.push(MemRef(registers.r12)) # slot id
+            bs.code += skip
             
             def load_in(slot_id):
                 def _(bs):
                     if slot_id == -1:
+                        from objects.upperdict import builtin
+                        bs.this.append(builtin.get_name(attr))
+                        return
                         import mypyable
                         bs.this.append(ast.Raise(
                             type=ast.Call(
@@ -2069,8 +2113,9 @@ class _StrCmpMeth(_Type):
         _Type.__init__(self)
         self.op_name = op_name
     def call(self, arg_types):
-        assert arg_types == (Str,)
         def _(bs):
+            if util.arg_check(bs, arg_types, (Str,)): return
+            
             assert bs.flow.stack.pop() is Str
             bs.code += isa.pop(registers.rdi)
             
@@ -2270,7 +2315,7 @@ class Str(_Type):
             else:
                 bs.code += isa.mov(registers.rax, struct.unpack("l", struct.pack("B7s", 2 * len(s) + 1, s))[0])
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(Str)
+            bs.flow.stack.append2(Str, s)
         return _
     def to_python(self, data):
         i, = struct.unpack("l", data)
@@ -2345,8 +2390,19 @@ class FunctionStr(_Type):
         return _
 
 @apply
+class FunctionGet(_Type):
+    size = 2
+    def call(self, arg_types):
+        def _(bs):
+            util.discard(bs)
+            assert bs.flow.stack[-1] is not NoneType
+            methods[bs.flow.stack[-1]].load()(bs)
+        return _
+
+@apply
 class Function(_Type):
     size = 2
+    def getattr___get__(self, bs): bs.flow.stack.append(FunctionGet)
     def getattr___str__(self, bs): bs.flow.stack.append(FunctionStr)
     def getattr___repr__(self, bs): bs.flow.stack.append(FunctionStr)
     def call(self, arg_types):

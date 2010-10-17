@@ -27,8 +27,8 @@ else:
     filename = os.path.join(os.path.dirname(__file__), "lib", "main.py")
 tree = ast.parse(open(filename).read(), filename)
 
-if util.DEBUG:
-    print util.dump(tree)
+#if util.DEBUG:
+#    print util.dump(tree)
 
 main_module = compiler.Function(ast.FunctionDef(
     name="__main__",
@@ -42,11 +42,29 @@ main_module = compiler.Function(ast.FunctionDef(
     decorator_list=[],
 ))
 
+def uncaught_exception(bs):
+    type = bs.flow.stack.pop()
+    for i in xrange(type.size): bs.code += isa.pop(registers.rax)
+    bs.this.append(ast.Str(s=repr(type)))
+    @bs.this.append
+    def _(bs):
+        bs.code += isa.mov(registers.rax, util.print_string_addr)
+        bs.code += isa.pop(registers.rdi)
+        bs.code += isa.call(registers.rax)
+        bs.this.append(None)
+
 def make_root():
-    return compiler.translate("make_root", compiler.Flow(None), this=[
+    flow = compiler.Flow(None)
+    flow.allocd_locals = True
+    return compiler.translate("make_root", flow, this=[
+        lambda bs: bs.code.add(isa.push(registers.rbp)), # moot scope
+        lambda bs: bs.code.add(isa.mov(registers.rbp, registers.rsp)), # moot scope
         lambda bs: bs.code.add(isa.push(0)), # moot scope
-        main_module.call(),
-        lambda bs: bs.code.add(isa.pop(registers.rax)), # moot scope
+        #main_module.call(),
+        lambda bs: bs.flow.try_stack.append(uncaught_exception),
+        tree.body,
+        lambda bs: bs.code.add(isa.mov(registers.rsp, registers.rbp)), # moot scope
+        lambda bs: bs.code.add(isa.pop(registers.rbp)), # moot scope
         lambda bs: bs.code.add(isa.ret()),
         None,
     ])
