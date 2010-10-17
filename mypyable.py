@@ -301,6 +301,15 @@ class SetAttributeErrorImpl(_PythonFunction):
         AttributeError_impl = new
         return type_impl.NoneType
 
+TypeError_impl = None
+@apply
+class SetTypeErrorImpl(_PythonFunction):
+    def handler(self, new):
+        global TypeError_impl
+        assert TypeError_impl is None, "TypeError_impl can only be set once"
+        TypeError_impl = new
+        return type_impl.NoneType
+
 SysModule_impl = None
 @apply
 class SetSysModuleImpl(_PythonFunction):
@@ -364,6 +373,7 @@ class PyableModule(type_impl._Type):
     def getattr_set_NameError_impl(self, bs): bs.flow.stack.append(SetNameErrorImpl)
     def getattr_set_AssertionError_impl(self, bs): bs.flow.stack.append(SetAssertionErrorImpl)
     def getattr_set_AttributeError_impl(self, bs): bs.flow.stack.append(SetAttributeErrorImpl)
+    def getattr_set_TypeError_impl(self, bs): bs.flow.stack.append(SetTypeErrorImpl)
     def getattr_set_SysModule_impl(self, bs): bs.flow.stack.append(SetSysModuleImpl)
     def getattr_args(self, bs):
         bs.flow.stack.append(ArgGetter)

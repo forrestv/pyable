@@ -396,6 +396,11 @@ class list(object):
         for item in other:
             res.append(item)
         return res
+    def __contains__(self, other):
+        for item in self:
+            if item == other:
+                return True
+        return False
 __pyable__.set_list_impl(list)
 
 class dict(object):
@@ -468,6 +473,10 @@ __pyable__.set_StopIteration_impl(StopIteration)
 class StandardError(Exception):
     pass
 
+class TypeError(StandardError):
+    pass
+__pyable__.set_TypeError_impl(TypeError)
+
 class SyntaxError(StandardError):
     pass
 __pyable__.set_SyntaxError_impl(SyntaxError)
@@ -501,6 +510,7 @@ class IOError(EnvironmentError):
 
 
 class module(object):
+    __pyable__inline__ = True
     def __init__(self, name):
         self.__name__ = name
     def __repr__(self):
@@ -547,6 +557,30 @@ def raw_input(prompt=None):
         sys.stdout.flush()
     r = sys.stdin.readline()
     return r
+
+class property(object):
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
+        self.fget = fget
+        self.fset = fset
+        self.fdel = fdel
+        self.__doc__ = doc
+
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self         
+        if self.fget is None:
+            raise AttributeError, "unreadable attribute"
+        return self.fget(obj)
+
+    def __set__(self, obj, value):
+        if self.fset is None:
+            raise AttributeError, "can't set attribute"
+        self.fset(obj, value)
+
+    def __delete__(self, obj):
+        if self.fdel is None:
+            raise AttributeError, "can't delete attribute"
+        self.fdel(obj)
 
 __name__ = "__main__"
 
