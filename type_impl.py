@@ -14,13 +14,11 @@ import compiler
 
 id_to_type = {}
 
-max_size = 4
-
 def number(inst):
     inst.id = len(id_to_type)
     assert inst.id not in id_to_type
     id_to_type[inst.id] = inst
-    assert inst.size <= max_size
+    assert inst.size <= 4
 
 #@apply
 class _Type(object):
@@ -431,9 +429,9 @@ class Int(_Type):
         assert isinstance(value, int)
         value = int(value)
         def _(bs):
-            bs.code += isa.mov(registers.rax, value)
+            bs.code += isa.mov(registers.rax, util.fake_int(value))
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append2(self, value)
+            bs.flow.stack.append(self)
         return _
     def to_python(self, data):
         i, = struct.unpack("l", data)
@@ -466,13 +464,13 @@ class Bool(_Int):
         def _(bs):
             bs.code += isa.mov(registers.rax, 0)
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append2(self, False)
+            bs.flow.stack.append(self)
         return _
     def load_true(self):
         def _(bs):
             bs.code += isa.mov(registers.rax, 1)
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append2(self, True)
+            bs.flow.stack.append(self)
         return _
     def getattr___str__(self, bs):
         bs.flow.stack.append(BoolStrMeth)
@@ -762,7 +760,7 @@ class Float(_Type):
         def _(bs):
             bs.code += isa.mov(registers.rax, struct.unpack("l", struct.pack("d", value))[0])
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append2(self, value)
+            bs.flow.stack.append(self)
         return _
     def getattr___str__(self, bs): bs.flow.stack.append(FloatStrMeth)
     def getattr___neg__(self, bs): bs.flow.stack.append(FloatNegMeth)
@@ -923,8 +921,6 @@ class ProtoObject(_Type):
         self.cfuncs = []
         import C3
         self.mro = C3.merge([[self]] + [x.mro for x in self.bases] + [self.bases])
-        from objects.upperdict import UpperDict
-        self.dict2 = UpperDict()
     def __repr__(self):
         return self.name
         return "ProtoObject" + repr((self.name, self.bases, self.dict))
@@ -938,15 +934,31 @@ class ProtoObject(_Type):
     def isinstance(self, other):
         return self in other.type.mro
     def setattr_const_string(self, attr):
-        return self.dict2.set_name(attr)
+        def _(bs):
+            assert bs.flow.stack.pop() is self
+            type = bs.flow.stack.pop()
+            assert type is Function
+            def handler(new_func, new_func2):
+                r = new_func, new_func2
+                self.attrs[attr] = r
+                for umr in self.attr_setters.get(attr, []):
+                    umr(r)
+            handler_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64, ctypes.c_int64)(handler)
+            self.cfuncs.append(handler_cfunc)
+            bs.code += isa.pop(registers.rsi)
+            bs.code += isa.pop(registers.rdi)
+            bs.code += isa.mov(registers.r12, registers.rsp)
+            bs.code += isa.and_(registers.rsp, -16)
+            bs.code += isa.mov(registers.rax, ctypes.cast(handler_cfunc, ctypes.c_void_p).value)
+            bs.code += isa.call(registers.rax)
+            bs.code += isa.mov(registers.rsp, registers.r12)
+        return _
     def getattr___name__(self, bs):
         bs.this.append(Str.load_constant(self.name))
     def load(self, bs):
         bs.flow.stack.append(self)
     def to_python(self, data):
         return self
-    def const_getattr(self, attr):
-        return self.dict2.get_name(attr)
 
 name_bits = util.cdict(lambda name: 1 << random.randrange(64))
 
@@ -1050,40 +1062,12 @@ class Scope(object):
             util.unlift(bs, store_in, "Scope.set_global")
         return _
     def set_name(self, attr):
-        from objects.upperdict import builtin
-        return builtin.set_name(attr)
         def _(bs):
-            #bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
-            #bs.code += isa.push(MemRef(registers.r12)) # slot id
-            
             bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
-            bs.code += isa.cmp(registers.r12, 0)
-            bs.code += isa.push(-1)
-            skip = bs.program.get_unique_label()
-            bs.code += isa.je(skip)
-            bs.code += isa.pop(registers.rax)
             bs.code += isa.push(MemRef(registers.r12)) # slot id
-            bs.code += skip
             
             def store_in(slot_id):
                 def _(bs):
-                    if slot_id == -1:
-                        from objects.upperdict import builtin
-                        bs.this.append(builtin.set_name(attr))
-                        return
-                        import mypyable
-                        bs.this.append(ast.Raise(
-                            type=ast.Call(
-                                func=mypyable.NameError_impl.load,
-                                args=[ast.Str(s=attr)],
-                                keywords=[],
-                                starargs=None,
-                                kwargs=None,
-                                ),
-                            inst=None,
-                            tback=None,
-                        ))
-                        return
                     slots = self.slots[slot_id]
                     if slots is None: # dictproxy
                         bs.code += isa.push(MemRef(registers.r12, 8))
@@ -1142,11 +1126,9 @@ class Scope(object):
             util.unlift(bs, store_in, "Scope.set_name")
         return _
     def get_name(self, attr):
-        from objects.upperdict import builtin
-        return builtin.get_name(attr)
         bits = name_bits[attr]
         def _(bs):
-            #bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
+            bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
             #loop = bs.program.get_unique_label()
             #bs.code += loop
             #bs.code += isa.cmp(registers.r12, 0)
@@ -1160,25 +1142,13 @@ class Scope(object):
             #bs.code += isa.mov(registers.r12, MemRef(registers.r12, 16))
             #bs.code += isa.jmp(loop)
             #bs.code += skip
-            #bs.code += isa.mov(registers.rax, MemRef(registers.r12)) # new
-            #bs.code += isa.push(registers.rax) # slot id
+            bs.code += isa.mov(registers.rax, MemRef(registers.r12)) # new
+            bs.code += isa.push(registers.rax) # slot id
             
-            
-            bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
-            bs.code += isa.cmp(registers.r12, 0)
-            bs.code += isa.push(-1)
-            skip = bs.program.get_unique_label()
-            bs.code += isa.je(skip)
-            bs.code += isa.pop(registers.rax)
-            bs.code += isa.push(MemRef(registers.r12)) # slot id
-            bs.code += skip
             
             def load_in(slot_id):
                 def _(bs):
                     if slot_id == -1:
-                        from objects.upperdict import builtin
-                        bs.this.append(builtin.get_name(attr))
-                        return
                         import mypyable
                         bs.this.append(ast.Raise(
                             type=ast.Call(
@@ -1269,19 +1239,36 @@ class ProtoInstance(_Type):
             bs.code += isa.push(registers.r12)
             bs.flow.stack.append(self)
             
-            bs.this.append(self.type.dict2.get_name("__init__"))
+            func1 = util.UpdatableMovRax(bs.code, 0)
+            bs.code += isa.push(registers.rax)
+            func2 = util.UpdatableMovRax(bs.code, 0)
+            bs.code += isa.push(registers.rax)
+            bs.flow.stack.append(Function)
             
-            @bs.this.append
-            def _(bs, arg_types=arg_types):
-                bs.code += isa.push(registers.r12)
-                bs.flow.stack.append(self)
-                
-                arg_size = sum(x.size for x in arg_types)
-                for i in xrange(arg_size):
-                    bs.code += isa.push(MemRef(registers.rsp, 8*arg_size+8+8+8))
-                bs.flow.stack.extend(arg_types)
+            def func_changed(*args):
+                for i in self.type.mro:
+                    if '__init__' in i.attrs:
+                        new = i.attrs['__init__']
+                        break
+                else:
+                    new = (say_functions[self.type.name, '__init__'], 0)
+                func1.replace(new[0])
+                func2.replace(new[1])
+            
+            for i in self.type.mro:
+                i.attr_setters.setdefault('__init__', []).append(func_changed)
+            
+            func_changed()
+            
+            bs.code += isa.push(registers.r12)
+            bs.flow.stack.append(self)
+            
+            arg_size = sum(x.size for x in arg_types)
+            for i in xrange(arg_size):
+                bs.code += isa.push(MemRef(registers.rsp, 8*arg_size+8+8+8))
+            bs.flow.stack.extend(arg_types)
 
-                bs.this.append(bs.flow.stack[-2 - len(arg_types)].call((self,) + arg_types))
+            bs.this.append(bs.flow.stack[-2 - len(arg_types)].call((self,) + arg_types))
             
             @bs.this.append
             def _(bs, arg_types=arg_types):
@@ -1382,27 +1369,6 @@ class ProtoInstance(_Type):
         def _(bs):
             assert bs.flow.stack.pop() is self
             
-            def __getattribute__(self, attr):
-                try:
-                    descr = getattr(type(self), attr)
-                except AttributeError:
-                    pass
-                else:
-                    if hasattr(descr, '__get__') and hasattr(descr, '__set__'):
-                        try:
-                            return descr.__get__(self, type(self))
-                        except AttributeError:
-                            pass
-                try:
-                    return self.__dict__[attr]
-                except KeyError:
-                    pass
-                try:
-                    return type(self).__dict__[attr]
-                except KeyError:
-                    pass
-                return type(self).__getattr__(attr)
-            
             bs.code += isa.pop(registers.r13)
             bs.code += isa.push(MemRef(registers.r13)) # slot id
             def _(value):
@@ -1439,6 +1405,13 @@ class ProtoInstance(_Type):
                             i.attr_setters.setdefault(attr, []).append(func_changed)
                         
                         func_changed()
+                        
+                        assert bs.flow.stack[-1] is Function
+                        
+                        bs.code += isa.push(registers.r13)
+                        bs.flow.stack.append(self)
+                        
+                        bs.this.append(methods[self].load())
                 return _
             util.unlift(bs, _, "ProtoInstance.const_getattr")
         return _
@@ -2096,9 +2069,8 @@ class _StrCmpMeth(_Type):
         _Type.__init__(self)
         self.op_name = op_name
     def call(self, arg_types):
+        assert arg_types == (Str,)
         def _(bs):
-            if util.arg_check(bs, arg_types, (Str,)): return
-            
             assert bs.flow.stack.pop() is Str
             bs.code += isa.pop(registers.rdi)
             
@@ -2298,7 +2270,7 @@ class Str(_Type):
             else:
                 bs.code += isa.mov(registers.rax, struct.unpack("l", struct.pack("B7s", 2 * len(s) + 1, s))[0])
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append2(Str, s)
+            bs.flow.stack.append(Str)
         return _
     def to_python(self, data):
         i, = struct.unpack("l", data)
@@ -2373,19 +2345,8 @@ class FunctionStr(_Type):
         return _
 
 @apply
-class FunctionGet(_Type):
-    size = 2
-    def call(self, arg_types):
-        def _(bs):
-            util.discard(bs)
-            assert bs.flow.stack[-1] is not NoneType
-            methods[bs.flow.stack[-1]].load()(bs)
-        return _
-
-@apply
 class Function(_Type):
     size = 2
-    def getattr___get__(self, bs): bs.flow.stack.append(FunctionGet)
     def getattr___str__(self, bs): bs.flow.stack.append(FunctionStr)
     def getattr___repr__(self, bs): bs.flow.stack.append(FunctionStr)
     def call(self, arg_types):

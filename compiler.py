@@ -137,29 +137,6 @@ class NonGenerator(Executable):
 
 #class Generator(object):
 
-class AnnotatedStack(object):
-    def __init__(self):
-        self.stack = []
-    def dup_other(self, other):
-        self.stack = list(other.stack)
-    def pop(self):
-        return self.stack.pop()[0]
-    def pop2(self):
-        return self.stack.pop()[0]
-    def append(self, item):
-        self.stack.append((item, None))
-    def append2(self, item, ann):
-        self.stack.append((item, ann))
-    def extend(self, items):
-        self.stack.extend((x, None) for x in items)
-    def __eq__(self, other):
-        return self.stack == other.stack
-    def __hash__(self):
-        return hash(tuple(self.stack))
-    def __getitem__(self, index):
-        assert index < 0
-        return self.stack[index][0]
-
 class Flow(object):
     def __init__(self, executable):
         self.executable = executable
@@ -167,7 +144,7 @@ class Flow(object):
         self.vars = {}
         #self.spaces = [0] * self.space
         self.var_type_impl = {}
-        self.stack = AnnotatedStack()
+        self.stack = []
         self.ctrl_stack = []
         self.allocd_locals = False
         self.class_stack = []
@@ -178,7 +155,7 @@ class Flow(object):
         return "Flow<%r>" % self.__dict__
     
     def __hash__(self):
-        return hash(self.stack)
+        return hash(tuple(self.stack))
         return id(self.executable) ^ self.space ^ util.hash_dict(self.vars) ^ util.hash_dict(self.var_type_impl)
     def __eq__(self, other):
         if not isinstance(other, Flow):
@@ -209,7 +186,7 @@ class Flow(object):
         r.vars.update(self.vars)
         #r.spaces[:] = self.spaces
         r.var_type_impl.update(self.var_type_impl)
-        r.stack.dup_other(self.stack)
+        r.stack[:] = self.stack
         r.ctrl_stack[:] = self.ctrl_stack
         r.allocd_locals = self.allocd_locals
         r.class_stack[:] = self.class_stack
@@ -383,8 +360,7 @@ def translate(desc, flow, stack=None, this=None):
         if t is None:
             return bs.finalise(desc)
         elif callable(t):
-            v = t(bs)
-            #assert v is None, (t, v) # some lambdas break this
+            t(bs)
             #print
             #print bs.flow.stack, bs.this, bs.call_stack, bs.desc
             #print
@@ -1237,7 +1213,7 @@ def translate(desc, flow, stack=None, this=None):
                             bs.this.append(ast.Raise(
                                 type=ast.Call(
                                     func=mypyable.SyntaxError_impl.load,
-                                    args=[ast.Str(s=s)],
+                                    args=[],
                                     keywords=[],
                                     starargs=None,
                                     kwargs=None,
