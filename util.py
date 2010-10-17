@@ -266,6 +266,7 @@ def dump(node, annotate_fields=True, include_attributes=False):
     return _format(node)
 
 def unlift(bs, func, desc):
+    #print desc
     #print func
     #flows = []
     @memoize
@@ -282,7 +283,8 @@ def unlift(bs, func, desc):
         def _(bs):
             good = bs.program.get_unique_label()
             
-            bs.code += isa.cmp(MemRef(registers.rsp), data)
+            bs.code += isa.mov(registers.rax, data) # check if could be combined into cmp
+            bs.code += isa.cmp(MemRef(registers.rsp), registers.rax)
             bs.code += isa.je(good)
             bs.code += isa.mov(registers.rdi, MemRef(registers.rsp))
             add_redirection(bs.code, lambda rdi, flow=bs.flow.clone(): get_jmp(make_thingy(flow, rdi)))
@@ -301,6 +303,7 @@ def unlift(bs, func, desc):
     bs.this.append(None)
 
 def unlift_noncached(bs, func, desc):
+    #print desc
     @memoize
     def make_post(flow):
         return compiler.translate("unlift_post", flow, stack=list(bs.call_stack))
@@ -396,6 +399,59 @@ def discard2(bs):
     type = bs.flow.stack.pop()
     type1 = bs.flow.stack.pop()
     bs.code += isa.add(registers.rsp, 8*(type.size+type1.size))
+
+class WatchedValue(object):
+    def __init__(self, value):
+        self.value = value
+        self.watchers = []
+    def get_and_watch(self, watcher):
+        self.watchers.append(watcher)
+        return self.value
+    def watch_now(self, watcher):
+        self.watchers.append(watcher)
+        watcher(self.value)
+    def set(self, new):
+        assert self.value is not new
+        self.value = new
+        for watcher in self.watchers:
+            watcher(new)
+
+def branch_on_watched(bs, watched, func): # should have an argument on whether to merge like unlift does (unlift versions should be merged too)
+    flow = bs.flow.clone()
+    call_stack = list(bs.call_stack)
+    branches = {} # value -> string
+    def watcher(new_value):
+        if not branches:
+            branches[value] = bs.program.render_code[label.position:label.position + patch_len]
+        if new_value is value:
+            data = branches[value]
+        else:
+            data = get_jmp(compiler.translate("branch_on_watched", flow, stack=call_stack, this=func(new_value)))
+        bs.program.render_code[label.position:label.position + patch_len] = data
+    value = watched.get_and_watch(watcher)
+    label = bs.program.get_unique_label()
+    bs.code += label
+    # remove later
+    for i in xrange(patch_len):
+        bs.code += isa.nop()
+    func(value)(bs)
+
+def arg_check(bs, args, should):
+    if map(id, args) == map(id, should): return False
+    import mypyable
+    bs.this.append(ast.Raise(
+        type=ast.Call(
+            func=mypyable.TypeError_impl.load,
+            args=[ast.Str(s="expected %r, got %r" % (should, args))],
+            keywords=[],
+            starargs=None,
+            kwargs=None,
+            ),
+        inst=None,
+        tback=None,
+        ),
+    )
+    return True
 
 if __name__ == "__main__":
     print repr(get_jmp(0))
