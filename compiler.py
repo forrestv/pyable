@@ -157,8 +157,10 @@ class AnnotatedStack(object):
     def __hash__(self):
         return hash(tuple(self.stack))
     def __getitem__(self, index):
-        assert index < 0
-        return self.stack[index][0]
+        if isinstance(index, slice):
+            return [x[0] for x in self.stack[index]]
+        else:
+            return self.stack[index][0]
 
 class Flow(object):
     def __init__(self, executable):

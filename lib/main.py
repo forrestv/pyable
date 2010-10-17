@@ -510,7 +510,7 @@ class IOError(EnvironmentError):
 
 
 class module(object):
-    __pyable__inline__ = True
+    #__pyable__inline__ = True
     def __init__(self, name):
         self.__name__ = name
     def __repr__(self):
