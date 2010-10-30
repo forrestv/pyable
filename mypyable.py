@@ -320,47 +320,6 @@ class SetSysModuleImpl(_PythonFunction):
         return type_impl.NoneType
 
 @apply
-class ArgGetter(_PythonFunction):
-    def handler(self, i):
-        import sys
-        return sys.argv[i]
-
-@apply
-class ArgGetterGetItem(type_impl._Type):
-    size = 0
-    def call(self, arg_types):
-        assert arg_types == (type_impl.Int,)
-        def _(bs):
-            assert bs.flow.stack.pop() is type_impl.Int
-            assert bs.flow.stack.pop() is self
-            def _(value):
-                def _(bs):
-                    import sys
-                    bs.this.append(type_impl.Str.load_constant(sys.argv[1 + value]))
-                return _
-            util.unlift(bs, _, "ArgGetterGetItem")
-        return _
-
-@apply
-class ArgGetterLen(type_impl._Type):
-    size = 0
-    def call(self, arg_types):
-        assert arg_types == ()
-        def _(bs):
-            assert bs.flow.stack.pop() is self
-            import sys
-            bs.this.append(type_impl.Int.load_constant(len(sys.argv[1:])))
-        return _
-
-@apply
-class ArgGetter(type_impl._Type):
-    size = 0
-    def getattr___getitem__(self, bs):
-        bs.flow.stack.append(ArgGetterGetItem)
-    def getattr___len__(self, bs):
-        bs.flow.stack.append(ArgGetterLen)
-
-@apply
 class PyableModule(type_impl._Type):
     size = 0
     def getattr_type(self, bs): bs.flow.stack.append(Type)
@@ -376,9 +335,9 @@ class PyableModule(type_impl._Type):
     def getattr_set_TypeError_impl(self, bs): bs.flow.stack.append(SetTypeErrorImpl)
     def getattr_set_SysModule_impl(self, bs): bs.flow.stack.append(SetSysModuleImpl)
     def getattr_args(self, bs):
-        bs.flow.stack.append(ArgGetter)
-        return
         import sys
-        for arg in sys.argv[1:]:
-            bs.this.append(type_impl.Str.load_constant(arg))
-        bs.this.append(type_impl.prototuples[(type_impl.Str,) * len(sys.argv[1:])].load())
+        bs.this.append(ast.List(ctx=ast.Load(), elts=[ast.Str(s=x) for x in sys.argv[1:]]))
+    def getattr_top_scope(self, bs):
+        from objects.upperdict import upperdicttypes
+        assert bs.flow.scopes[0] is None
+        bs.flow.stack.append(upperdicttypes[bs.flow.scopes[1]])

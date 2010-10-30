@@ -8,6 +8,8 @@ libc = ctypes.CDLL("libc.so.6")
 class object():
     def __init__(self):
         pass
+    def __len__(self):
+        raise TypeError("object of type '" + self.__class__.__name__ + "' has no len()!")
     def __repr__(self):
         return "<" + self.__class__.__name__ + " object>"
         #return "<%s object>" % (self.__class__.__name__,)
@@ -340,7 +342,6 @@ class list(object):
              self._grow()
         self._store.store_object(4 * self._used, item)
         self._used += 1
-        return self
     def __getitem__(self, index):
         try:
             index.real
@@ -510,7 +511,7 @@ class IOError(EnvironmentError):
 
 
 class module(object):
-    #__pyable__inline__ = True
+    __pyable__inline__ = True
     def __init__(self, name):
         self.__name__ = name
     def __repr__(self):
@@ -522,7 +523,7 @@ sys.modules['sys'] = sys
 sys.stdin = file_from_fileno(0, '<stdin>', 'r')
 sys.stdout = file_from_fileno(1, '<stdout>', 'w')
 sys.stderr = file_from_fileno(2, '<stderr>', 'w')
-sys.argv = []
+sys.argv = __pyable__.args
 sys.path = []
 sys.path.append("test/")
 sys.path.append("lib/")
@@ -541,7 +542,7 @@ def __import__(name):
         except IOError:
             continue
         f = f.read()
-        exec f in None, r.__dict__
+        exec f in __pyable__.top_scope, r.__dict__
         sys.modules[name] = r
         return r
     else:
@@ -559,6 +560,7 @@ def raw_input(prompt=None):
     return r
 
 class property(object):
+    __pyable__inline__ = True
     def __init__(self, fget=None, fset=None, fdel=None, doc=None):
         self.fget = fget
         self.fset = fset
@@ -581,13 +583,23 @@ class property(object):
         if self.fdel is None:
             raise AttributeError, "can't delete attribute"
         self.fdel(obj)
+    
+    def getter(self, fget):
+        self.fget = fget
+        return self
+    
+    def setter(self, fset):
+        self.fset = fset
+        return self
+    
+    def deleter(self, fdel):
+        self.fdel = fdel
+        return self
 
-__name__ = "__main__"
-
-if len(__pyable__.args):
-    a = __pyable__.args[0]
+if len(sys.argv):
     try:
-        exec open(a).read()
+        __name__ = "__main__"
+        exec open(sys.argv[0]).read()
     except Exception, e:
         print "error:", e
 else:
@@ -601,6 +613,7 @@ else:
                 break
             exec _line
         except Exception, e:
+            print 1
             try:
                 print "error:", e
             except:

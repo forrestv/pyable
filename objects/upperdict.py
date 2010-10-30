@@ -36,33 +36,23 @@ class Attribute(object):
             self.value.set(new_type)
         self.type_setter = ctypes.CFUNCTYPE(None, ctypes.c_long)(type_changed)
 
-class UpperDict(_Type):
-    size = 0
-    def __init__(self):
-        _Type.__init__(self)
+class UpperDict(object):
+    def __init__(self, desc):
         self.contents = util.cdict(Attribute)
+        self.desc = desc
     
-    def get_name(self, attr):
+    def __repr__(self):
+        d = {}
+        for a, b in self.contents.iteritems():
+            d[a] = b.value.value
+        return "UpperDict@%x%r%r" % (id(self), self.desc, d)
+    
+    def load_name(self, attr):
         def _(bs):
             content = self.contents[attr]
             def load_type(type):
                 def _(bs):
-                    if type is Unset:
-                        if mypyable.NameError_impl is None:
-                            bs.this.append(ast.Raise(ast.Str(s=""), None, None))
-                            return
-                        bs.this.append(ast.Raise(
-                            type=ast.Call(
-                                func=mypyable.NameError_impl.load,
-                                args=[ast.Str(s=attr)],
-                                keywords=[],
-                                starargs=None,
-                                kwargs=None,
-                                ),
-                            inst=None,
-                            tback=None,
-                        ))
-                        return
+                    #print "loading", attr, self.desc, type, repr(content.container.raw)
                     addr = ctypes.cast(content.container, ctypes.c_void_p).value
                     if type.size:
                         bs.code += isa.mov(registers.rax, addr)
@@ -73,11 +63,12 @@ class UpperDict(_Type):
             util.branch_on_watched(bs, content.value, load_type)
         return _
     
-    def set_name(self, attr):
+    def store_name(self, attr):
         def _(bs):
             content = self.contents[attr]
             
-            type = bs.flow.stack.pop()
+            type, a = bs.flow.stack.pop2()
+            #type = bs.flow.stack.pop()
             
             # we could use a watcher to modify the generated code to not require a memory access.
             skip = bs.program.get_unique_label()
@@ -86,18 +77,21 @@ class UpperDict(_Type):
             bs.code += isa.je(skip)
             bs.code += isa.mov(registers.rax, ctypes.cast(content.type_setter, ctypes.c_void_p).value)
             bs.code += isa.mov(registers.rdi, type.id)
+            bs.code += isa.mov(registers.r12, registers.rsp)
+            bs.code += isa.and_(registers.rsp, -16)
             bs.code += isa.call(registers.rax)
+            bs.code += isa.mov(registers.rsp, registers.r12)
             bs.code += skip
             
-            if type is not content.value.value: content.value.set(type)
+            #if type is not content.value.value: content.value.set(type)
             # i'm pretty sure we can do this - this code will immediately be executed after and this fits in with code generation
             # BUT things that use it before it have to be altered properly
             # right now they will just raise an error - render_code hasn't been defined
             # it should ignore this and wait for the asm code above to modify it.
             
-            addr = ctypes.cast(content.container, ctypes.c_void_p).value
+            #print "storing", attr, self.desc, type, a, repr(content.container.raw)
             if type.size:
-                bs.code += isa.mov(registers.rax, addr)
+                bs.code += isa.mov(registers.rax, ctypes.cast(content.container, ctypes.c_void_p).value)
                 for i in reversed(xrange(type.size)):
                     bs.code += isa.pop(MemRef(registers.rax, 8 * i))
         return _
@@ -106,4 +100,11 @@ class UpperDict(_Type):
         bs.flow.stack.append(Unset)
         bs.flow.this.append(self.set_name(attr))
 
-builtin = UpperDict()
+class UpperDictType(_Type):
+    size = 0
+    def __init__(self, dict):
+        _Type.__init__(self)
+        assert isinstance(dict, UpperDict)
+        self.dict = dict
+
+upperdicttypes = util.cdict(UpperDictType)

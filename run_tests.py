@@ -13,7 +13,7 @@ for item in glob.glob("test/*.py"):
     a = subprocess.Popen(["python", item], bufsize=2**16, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     b = subprocess.Popen(["python", "main.py", item], bufsize=2**16, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     tests.append((item, a, b))
-    time.sleep(1)
+    time.sleep(.4)
 
 for item, a, b in tests:
     #print "waiting on", item

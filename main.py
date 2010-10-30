@@ -16,21 +16,23 @@ import util
 import type_impl
 import compiler
 
+filename = os.path.join(os.path.dirname(__file__), "lib", "main.py")
+
 if sys.argv[1:] and sys.argv[1] == "--debug":
-    util.DEBUG = 1
+    util.DEBUG = True
     sys.argv[1:] = sys.argv[2:]
 
-if 0:
-    filename = sys.argv[1]
-    sys.argv[1:] = sys.argv[2:]
-else:
-    filename = os.path.join(os.path.dirname(__file__), "lib", "main.py")
+if sys.argv[1:] and sys.argv[1] == "--override":
+    override = True
+    filename = sys.argv[2]
+    sys.argv[1:] = sys.argv[3:]
+    
 tree = ast.parse(open(filename).read(), filename)
 
 #if util.DEBUG:
 #    print util.dump(tree)
 
-main_module = compiler.Function(ast.FunctionDef(
+main_module = compiler.Function([None], ast.FunctionDef(
     name="__main__",
     args=ast.arguments(
         args=[],
@@ -43,30 +45,65 @@ main_module = compiler.Function(ast.FunctionDef(
 ))
 
 def uncaught_exception(bs):
-    type = bs.flow.stack.pop()
-    for i in xrange(type.size): bs.code += isa.pop(registers.rax)
-    bs.this.append(ast.Str(s=repr(type)))
+    #type = bs.flow.stack.pop()
+    #if type is type_impl.Str:
+    #    bs.code += isa.pop(registers.rdi)
+    #    bs.code += isa.mov(registers.rax, util.print_string_addr)
+    #    bs.code += isa.call(registers.rax)
+    #    bs.code += isa.mov(registers.rax, util.print_nl_addr)
+    #    bs.code += isa.call(registers.rax)
+    #    bs.code += isa.mov(registers.rsp, registers.rbp)
+    #    bs.code += isa.pop(registers.rbp)
+    #    bs.code += isa.ret()
+    #    return
+    #for i in xrange(type.size): bs.code += isa.pop(registers.rax)
+    #bs.this.append(ast.Str(s="uncaught exception. type: " + repr(type)))
+    #@bs.flow.try_stack.append
+    #def _(bs):
+    #    print list(bs.flow.stack), "XXX"
+    #bs.this.append(
+    #    ast.Call(
+    #        func=ast.Attribute(
+    #            value=lambda bs: None,
+    #            attr='__str__',
+    #            ctx=ast.Load(),
+    #            ),
+    #        args=[],
+    #        keywords=[],
+    #        starargs=None,
+    #        kwargs=None,
+    #        ),
+    #    )
     @bs.this.append
     def _(bs):
+        assert bs.flow.stack[-1] is type_impl.Str, list(bs.flow.stack)
+        bs.flow.stack.pop()
         bs.code += isa.mov(registers.rax, util.print_string_addr)
         bs.code += isa.pop(registers.rdi)
         bs.code += isa.call(registers.rax)
-        bs.this.append(None)
+        bs.code += isa.mov(registers.rax, util.print_nl_addr)
+        bs.code += isa.call(registers.rax)
+        bs.code += isa.mov(registers.rsp, registers.rbp)
+        bs.code += isa.pop(registers.rbp)
+        bs.code += isa.ret()
 
 def make_root():
-    flow = compiler.Flow(None)
-    flow.allocd_locals = True
-    return compiler.translate("make_root", flow, this=[
-        lambda bs: bs.code.add(isa.push(registers.rbp)), # moot scope
-        lambda bs: bs.code.add(isa.mov(registers.rbp, registers.rsp)), # moot scope
-        lambda bs: bs.code.add(isa.push(0)), # moot scope
-        #main_module.call(),
+    return compiler.translate("make_root", compiler.Flow(compiler.Executable([])), this=[
+        lambda bs: bs.code.add(isa.push(registers.rbp)),
+        lambda bs: bs.code.add(isa.mov(registers.rbp, registers.rsp)),
         lambda bs: bs.flow.try_stack.append(uncaught_exception),
-        tree.body,
-        lambda bs: bs.code.add(isa.mov(registers.rsp, registers.rbp)), # moot scope
-        lambda bs: bs.code.add(isa.pop(registers.rbp)), # moot scope
+        main_module.load(),
+        ast.Call(
+            func=lambda bs: None,
+            args=[],
+            keywords=[],
+            starargs=None,
+            kwargs=None,
+            ),
+        lambda bs: bs.code.add(isa.mov(registers.rsp, registers.rbp)),
+        lambda bs: bs.code.add(isa.pop(registers.rbp)),
         lambda bs: bs.code.add(isa.ret()),
-        None,
+        compiler.end,
     ])
 
 def caller():

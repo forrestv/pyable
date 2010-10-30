@@ -204,6 +204,14 @@ def add_redirection(caller_code, callback):
         
         caller_program.references.append(code)
 
+def get_redirection(callback):
+    program = BareProgram()
+    code = program.get_stream()
+    add_redirection(code, callback)
+    program.add(code)
+    program.cache_code()
+    return program
+
 def post():
     if DEBUG:
         print "redirection stats:", triggered_redirections, "/", redirections
@@ -277,7 +285,7 @@ def unlift(bs, func, desc):
         #    print flow == flows[-1]
         #    print flow.__dict__ == flows[-1].__dict__
         #flows.append(flow)
-        return compiler.translate("unlift_post", flow, stack=list(bs.call_stack))
+        return compiler.translate("unlift_post " + desc, flow, stack=list(bs.call_stack))
     def make_thingy(flow, data):
         #print "thingy", id(flows), desc, data
         def _(bs):
@@ -293,26 +301,26 @@ def unlift(bs, func, desc):
             bs.code += isa.pop(registers.rax)
             bs.this.append(func(data))
         
-        return compiler.translate("unlift_thingy", flow, this=[
+        return compiler.translate("unlift_thingy " + desc, flow, this=[
             _,
             lambda bs: add_redirection(bs.code, lambda rdi, flow=bs.flow.clone(): get_jmp(make_post(flow))),
-            None,
+            compiler.end,
         ])
     bs.code += isa.mov(registers.rdi, MemRef(registers.rsp))
     add_redirection(bs.code, lambda rdi, flow=bs.flow.clone(): get_jmp(make_thingy(flow, rdi)))
-    bs.this.append(None)
+    bs.this.append(compiler.end)
 
 def unlift_noncached(bs, func, desc):
     #print desc
     @memoize
     def make_post(flow):
-        return compiler.translate("unlift_post", flow, stack=list(bs.call_stack))
+        return compiler.translate("unlift_post " + desc, flow, stack=list(bs.call_stack))
     
     def make_thingy(flow, data):
-        return compiler.translate("unlift_thingy", flow, this=[
+        return compiler.translate("unlift_thingy " + desc, flow, this=[
             func(data),
             lambda bs: add_redirection(bs.code, lambda rdi, flow=bs.flow.clone(): get_jmp(make_post(flow))),
-            None,
+            compiler.end,
         ])
     
     @called_from_asm
@@ -328,7 +336,7 @@ def unlift_noncached(bs, func, desc):
     bs.code += isa.call(registers.rax)
     bs.code += isa.mov(registers.rsp, registers.r12)
     bs.code += isa.jmp(registers.rax)
-    bs.this.append(None)
+    bs.this.append(compiler.end)
     
     bs.program.references.append(code)
 
@@ -340,6 +348,14 @@ def hash_dict(d):
 
 import compiler
 
+def read_top(bs, regs):
+    res = []
+    type = bs.flow.stack[-1]
+    for i in xrange(type.size):
+        reg = regs.pop()
+        bs.code += isa.mov(reg, MemRef(registers.rsp, 8*i))
+        res.append(reg)
+    return type, res
 def pop(bs, regs):
     res = []
     type = bs.flow.stack.pop()
@@ -387,18 +403,30 @@ def rem2(bs):
 
 def dup(bs):
     regs = list(good_regs)
-    a = pop(bs, regs)
+    a = read_top(bs, regs)
     push(bs, a)
+
+def lower(bs, n):
+    regs = list(good_regs)
+    a = pop(bs, regs)
+    d = 0
+    for i in xrange(n):
+        t = bs.flow.stack.pop()
+        d += t.size
+    if d:
+        bs.code += isa.add(registers.rsp, 8*d)
     push(bs, a)
 
 def discard(bs):
     type = bs.flow.stack.pop()
-    bs.code += isa.add(registers.rsp, 8*type.size)
+    if type.size:
+        bs.code += isa.add(registers.rsp, 8*type.size)
 
 def discard2(bs):
     type = bs.flow.stack.pop()
     type1 = bs.flow.stack.pop()
-    bs.code += isa.add(registers.rsp, 8*(type.size+type1.size))
+    if type.size + type1.size:
+        bs.code += isa.add(registers.rsp, 8*(type.size+type1.size))
 
 class WatchedValue(object):
     def __init__(self, value):
@@ -423,10 +451,13 @@ def branch_on_watched(bs, watched, func): # should have an argument on whether t
     def watcher(new_value):
         if not branches:
             branches[value] = bs.program.render_code[label.position:label.position + patch_len]
-        if new_value is value:
+        if new_value in branches:
             data = branches[value]
         else:
-            data = get_jmp(compiler.translate("branch_on_watched", flow, stack=call_stack, this=func(new_value)))
+            prgm = get_redirection(lambda rdi:  get_jmp(compiler.translate("branch_on_watched", flow, stack=call_stack, this=func(new_value))))
+            data = prgm.render_code
+            prgm.render_code = OffsetListProxy(bs.program.render_code, label.position)
+            branches[value] = data
         bs.program.render_code[label.position:label.position + patch_len] = data
     value = watched.get_and_watch(watcher)
     label = bs.program.get_unique_label()
@@ -452,6 +483,25 @@ def arg_check(bs, args, should):
         ),
     )
     return True
+
+
+class OffsetListProxy(object):
+    def __init__(self, source, offset):
+        self.source = source
+        self.offset = offset
+    def __setitem__(self, item, value):
+        if isinstance(item, slice):
+            item = slice(item.start + self.offset, item.stop+self.offset, item.step)
+        else:
+            item += self.offset
+        self.source.__setitem__(item, value)
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            item = slice(item.start + self.offset, item.stop+self.offset, item.step)
+        else:
+            item += self.offset
+        return self.source.__getitem__(item)
+
 
 if __name__ == "__main__":
     print repr(get_jmp(0))

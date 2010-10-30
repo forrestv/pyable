@@ -169,23 +169,25 @@ class IntStrMeth(_Type):
             
             
             bs.code += isa.push(registers.r12)
-            bs.code += isa.add(registers.r12, 9)
+            bs.code += isa.mov(registers.r14, registers.r12)
+            bs.code += isa.add(registers.r14, 8)
             
             bs.code += isa.mov(registers.r13, registers.rsp)
             
             bs.code += isa.and_(registers.rsp, -16)
             
-            bs.code += isa.mov(registers.rdi, registers.r12)
+            bs.code += isa.mov(registers.rdi, registers.r14)
+            bs.code += isa.add(registers.rdi, 1)
             bs.code += isa.mov(registers.rax, util.malloc_addr)
             bs.code += isa.call(registers.rax)
             
-            bs.code += isa.mov(MemRef(registers.rax, 1, registers.r12), 0)
-            
             bs.code += isa.mov(registers.rdi, registers.rax)
             bs.code += isa.mov(registers.rsi, registers.r13)
-            bs.code += isa.mov(registers.rdx, registers.r12)
-            bs.code += isa.mov(registers.rax, ctypes.cast(ctypes.memmove, ctypes.c_void_p).value)	
-            bs.code += isa.call(registers.rax)
+            bs.code += isa.mov(registers.rcx, registers.r14)
+            bs.code += isa.rep()
+            bs.code += isa.movsb()
+            
+            bs.code += isa.mov(MemRef(registers.rax, 0, registers.r14, data_size=8), 0)
             
             bs.code += isa.mov(registers.rsp, registers.rbp)
             bs.code += isa.pop(registers.rbp)
@@ -917,61 +919,127 @@ class ProtoObject(_Type):
         self.name = name
         self.bases = list(bases)
         #print bases
-        self.dict = dict
-        self.attrs = {}
-        self.attr_setters = {}
         self.cfuncs = []
         import C3
         self.mro = C3.merge([[self]] + [x.mro for x in self.bases] + [self.bases])
+        from objects.upperdict import UpperDict
+        self.dict2 = UpperDict("class " + name)
     def __repr__(self):
         return self.name
         return "ProtoObject" + repr((self.name, self.bases, self.dict))
     def call(self, arg_types):
         def _(bs):
             assert bs.flow.stack[-1 - len(arg_types)] is self
-            bs.this.append(protoinstances[self].new(arg_types))
+            
+            from objects.upperdict import UpperDict
+            
+            bs.this.append(self.load)
+            bs.this.append(self.const_getattr("__pyable__inline__", use_exception=False))
+            @bs.this.append
+            def _(bs):
+                from objects.upperdict import Unset
+                type = bs.flow.stack[-1]
+                util.discard(bs)
+                if type is Unset:
+                    bs.this.append(protoinstances[self].new())
+                else:
+                    bs.this.append(ProtoInstance2(self).new())
+            
+            @bs.this.append
+            def _(bs):
+                util.dup(bs)
+                bs.this.append(bs.flow.stack[-1].const_getattr("__init__", skip_dict=True))
+            
+            @bs.this.append
+            def _(bs, arg_types=arg_types):
+                # type <args> instance __init__
+                arg_size = sum(x.size for x in arg_types)
+                #print bs.flow.stack.stack
+                for i in xrange(arg_size):
+                    bs.code += isa.push(MemRef(registers.rsp, 8 * (arg_size + bs.flow.stack[-2].size + bs.flow.stack[-1].size - 1)))
+                bs.flow.stack.extend(arg_types)
+                
+                bs.this.append(bs.flow.stack[-1 - len(arg_types)].call(arg_types))
+                
+                @bs.this.append
+                def _(bs, arg_types=arg_types):
+                    # discard __init__ result
+                    util.discard(bs)
+                    
+                    # remove arguments
+                    util.lower(bs, len(arg_types) + 1)
         return _
     def issubclass(self, other):
         return self in other.mro
     def isinstance(self, other):
+        #print self, other
         return self in other.type.mro
     def setattr_const_string(self, attr):
         def _(bs):
             assert bs.flow.stack.pop() is self
-            type = bs.flow.stack.pop()
-            assert type is Function
-            def handler(new_func, new_func2):
-                r = new_func, new_func2
-                self.attrs[attr] = r
-                for umr in self.attr_setters.get(attr, []):
-                    umr(r)
-            handler_cfunc = ctypes.CFUNCTYPE(None, ctypes.c_int64, ctypes.c_int64)(handler)
-            self.cfuncs.append(handler_cfunc)
-            bs.code += isa.pop(registers.rsi)
-            bs.code += isa.pop(registers.rdi)
-            bs.code += isa.mov(registers.r12, registers.rsp)
-            bs.code += isa.and_(registers.rsp, -16)
-            bs.code += isa.mov(registers.rax, ctypes.cast(handler_cfunc, ctypes.c_void_p).value)
-            bs.code += isa.call(registers.rax)
-            bs.code += isa.mov(registers.rsp, registers.r12)
+            self.dict2.store_name(attr)(bs)
         return _
-    def getattr___name__(self, bs):
-        bs.this.append(Str.load_constant(self.name))
     def load(self, bs):
         bs.flow.stack.append(self)
     def to_python(self, data):
         return self
+    def const_getattr(self, attr, use_exception=True):
+        if attr == "__name__":
+            def _(bs):
+                assert bs.flow.stack.pop() is self
+                bs.this.append(Str.load_constant(self.name))
+            return _
+        if attr == '__dict__':
+            def _(bs):
+                assert bs.flow.stack.pop() is self
+                from objects.upperdict import upperdicttypes
+                bs.flow.stack.append(upperdicttypes[self.dict2])
+            return _
+        def _(bs):
+            #print list(bs.flow.stack.stack), self
+            assert bs.flow.stack.pop() is self
+            from objects.upperdict import Unset
+            def get_name(name, mro):
+                def _(bs):
+                    if not mro:
+                        if use_exception:
+                            import mypyable
+                            if mypyable.AttributeError_impl is None:
+                                bs.this.append(ast.Raise(ast.Str(s=name + " is not set!"), None, None))
+                                return
+                            bs.this.append(ast.Raise(
+                                type=ast.Call(
+                                    func=mypyable.AttributeError_impl.load,
+                                    args=[ast.Str(s=name)],
+                                    keywords=[],
+                                    starargs=None,
+                                    kwargs=None,
+                                    ),
+                                inst=None,
+                                tback=None,
+                            ))
+                        else:
+                            bs.flow.stack.append(Unset)
+                    else:
+                        bs.this.append(mro[0].dict2.load_name(name))
+                        @bs.this.append
+                        def _(bs):
+                            from objects.upperdict import Unset
+                            if bs.flow.stack[-1] is Unset:
+                                bs.flow.stack.pop()
+                                bs.this.append(get_name(name, mro[1:]))
+                return _
+            bs.this.append(get_name(attr, self.mro))
+        return _
 
 name_bits = util.cdict(lambda name: 1 << random.randrange(64))
 
 @apply
-class Scope(object):
+class UnliftDict(object):
     slots = [None]
     
     def create(self):
         def _(bs):
-            assert not bs.flow.allocd_locals
-            
             new_slots = self.get_slots(bs.flow.var_type_impl)
             if new_slots in self.slots:
                 new_id = self.slots.index(new_slots)
@@ -1007,61 +1075,6 @@ class Scope(object):
             bs.code += isa.mov(MemRef(registers.rax, 24), registers.rbx) # parent
             
             bs.code += isa.mov(MemRef(registers.rbp, -8), registers.rax)
-        return _
-    def set_global(self, attr):
-        def _(bs):
-            bs.code += isa.mov(registers.r12, MemRef(registers.rbp, -8)) # scope object
-            bs.code += isa.push(MemRef(registers.r12)) # slot id
-            
-            def store_in(slot_id):
-                def _(bs):
-                    slots = self.slots[slot_id]
-                    if attr not in slots or slots[attr][0] is not type:
-                        var_types = self.get_var_types(slots)
-                        var_types[attr] = None
-                        new_slots = self.get_slots(var_types)
-                        if new_slots in self.slots:
-                            new_id = self.slots.index(new_slots)
-                        else:
-                            new_id = len(self.slots)
-                            self.slots.append(new_slots)
-                        
-                        #print slots, new_slots, slot_id, new_id
-                        
-                        #old_size = sum(x.size for x, _ in slots.itervalues())
-                        new_size = sum(x.size for x, _ in new_slots.itervalues())
-                        
-                        bs.code += isa.mov(registers.r14, MemRef(registers.r12, 8)) # r14 = pointer to old slots data
-                        
-                        bs.code += isa.mov(registers.rax, util.malloc_addr)
-                        bs.code += isa.mov(registers.rdi, 8 * new_size)
-                        bs.code += isa.call(registers.rax)
-                        bs.code += isa.mov(registers.r15, registers.rax) # r15 = pointer to new slots data
-                        
-                        # move variables organized as slots in *r14 to as organized in new_slots in *r15
-                        for attr_, (type_, pos_) in new_slots.iteritems():
-                            if attr_ == attr:
-                                continue
-                            assert slots[attr_][0] is type_
-                            old_pos_ = slots[attr_][1]
-                            for i in xrange(type_.size):
-                                bs.code += isa.mov(registers.rax, MemRef(registers.r14, 8 * (old_pos_ + i)))
-                                bs.code += isa.mov(MemRef(registers.r15, 8 * (pos_ + i)), registers.rax)
-                        
-                        # free old slots holder
-                        bs.code += isa.mov(registers.rax, util.free_addr)
-                        bs.code += isa.mov(registers.rdi, registers.r14)
-                        bs.code += isa.call(registers.rax)
-                        
-                        # change reference and id on object
-                        bs.code += isa.mov(MemRef(registers.r12), new_id)
-                        bs.code += isa.mov(MemRef(registers.r12, 8), registers.r15)
-                        # can't do this, but maybe there is some way
-                        # bs.code += isa.and_(MemRef(registers.r12, 24), ~name_bits[attr])
-                        
-                        slots = new_slots
-                return _
-            util.unlift(bs, store_in, "Scope.set_global")
         return _
     def set_name(self, attr):
         from objects.upperdict import builtin
@@ -1269,7 +1282,7 @@ class ProtoInstance(_Type):
         self.type = type
     def __repr__(self):
         return "ProtoInstance(%s)" % (self.type,)
-    def new(self, arg_types):
+    def new(self):
         def _(bs):
             bs.code += isa.mov(registers.rdi, 8 * 3)
             bs.code += isa.mov(registers.rax, util.malloc_addr)
@@ -1282,59 +1295,6 @@ class ProtoInstance(_Type):
             
             bs.code += isa.push(registers.r12)
             bs.flow.stack.append(self)
-            
-            func1 = util.UpdatableMovRax(bs.code, 0)
-            bs.code += isa.push(registers.rax)
-            func2 = util.UpdatableMovRax(bs.code, 0)
-            bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(Function)
-            
-            def func_changed(*args):
-                for i in self.type.mro:
-                    if '__init__' in i.attrs:
-                        new = i.attrs['__init__']
-                        break
-                else:
-                    new = (say_functions[self.type.name, '__init__'], 0)
-                func1.replace(new[0])
-                func2.replace(new[1])
-            
-            for i in self.type.mro:
-                i.attr_setters.setdefault('__init__', []).append(func_changed)
-            
-            func_changed()
-            
-            bs.code += isa.push(registers.r12)
-            bs.flow.stack.append(self)
-            
-            arg_size = sum(x.size for x in arg_types)
-            for i in xrange(arg_size):
-                bs.code += isa.push(MemRef(registers.rsp, 8*arg_size+8+8+8))
-            bs.flow.stack.extend(arg_types)
-
-            bs.this.append(bs.flow.stack[-2 - len(arg_types)].call((self,) + arg_types))
-            
-            @bs.this.append
-            def _(bs, arg_types=arg_types):
-                # discard __init__ result
-                type = bs.flow.stack.pop()
-                for i in xrange(type.size):
-                    bs.code += isa.pop(registers.rax)
-                
-                assert bs.flow.stack.pop() is self
-                
-                bs.code += isa.pop(registers.r12)
-                
-                for arg_type in arg_types[::-1]:
-                    assert bs.flow.stack.pop() is arg_type
-                    for i in xrange(arg_type.size):
-                        bs.code += isa.pop(registers.rax)
-                
-                assert bs.flow.stack[-1] is self.type, bs.flow.stack[-1]
-                bs.flow.stack.pop()
-                
-                bs.code += isa.push(registers.r12)
-                bs.flow.stack.append(self)
         return _
     def setattr_const_string(self, attr):
         assert attr != '__class__'
@@ -1396,12 +1356,10 @@ class ProtoInstance(_Type):
                 return _
             util.unlift(bs, _, "ProtoInstance.setattr_const_string")
         return _
-    def const_getattr(self, attr, fail_func=None):
+    def const_getattr(self, attr, fail_func=None, skip_dict=False):
         if attr == '__class__':
             def _(bs):
-                assert bs.flow.stack.pop() is self
-                for i in xrange(self.size):
-                    bs.code += isa.pop(registers.rax)
+                util.discard(bs)
                 assert self.type.size == 0
                 bs.flow.stack.append(self.type)
             return _
@@ -1411,57 +1369,80 @@ class ProtoInstance(_Type):
                 bs.flow.stack.append(DictProxy)
             return _
         def _(bs):
-            assert bs.flow.stack.pop() is self
-            
-            bs.code += isa.pop(registers.r13)
-            bs.code += isa.push(MemRef(registers.r13)) # slot id
-            def _(value):
+            from objects.upperdict import Unset
+            def get_attr(mro):
                 def _(bs):
-                    slots = protoslots[value]
-                    if attr in slots:
-                        type, pos = slots[attr]
-                        bs.code += isa.mov(registers.r14, MemRef(registers.r13, 8))
-                        for i in reversed(xrange(type.size)):
-                            bs.code += isa.push(MemRef(registers.r14, 8 * (pos + i)))
-                        bs.flow.stack.append(type)
+                    if not mro:
+                        bs.flow.stack.append(Unset)
                     else:
-                        if self.type is None:
-                            bs.this.append(fail_func())
-                            return
-
-                        func1 = util.UpdatableMovRax(bs.code, 0)
-                        bs.code += isa.push(registers.rax)
-                        func2 = util.UpdatableMovRax(bs.code, 0)
-                        bs.code += isa.push(registers.rax)
-                        bs.flow.stack.append(Function)
-                        
-                        def func_changed(*args):
-                            for i in self.type.mro:
-                                if attr in i.attrs:
-                                    new = i.attrs[attr]
-                                    break
-                            else:
-                                new = (say_functions[self.type.name, attr], 0)
-                            func1.replace(new[0])
-                            func2.replace(new[1])
-                        
-                        for i in self.type.mro:
-                            i.attr_setters.setdefault(attr, []).append(func_changed)
-                        
-                        func_changed()
-                        
-                        assert bs.flow.stack[-1] is Function
-                        
-                        bs.code += isa.push(registers.r13)
-                        bs.flow.stack.append(self)
-                        
-                        bs.this.append(methods[self].load())
+                        bs.this.append(mro[0].dict2.load_name(attr))
+                        @bs.this.append
+                        def _(bs):
+                            if bs.flow.stack[-1] is Unset:
+                                bs.flow.stack.pop()
+                                bs.this.append(get_attr(mro[1:]))
                 return _
-            util.unlift(bs, _, "ProtoInstance.const_getattr")
+            bs.this.append(get_attr(self.type.mro))
+            
+            @bs.this.append
+            def _(bs):
+                if bs.flow.stack[-1] is Unset:
+                    assert bs.flow.stack.pop() is Unset
+                    '''
+                    def __getattribute__(self, attr):
+                        try:
+                            descr = getattr(type(self), attr)
+                        except AttributeError:
+                            try:
+                                return self.__dict__[attr]
+                            except KeyError:
+                                raise AttributeError
+                        if not hasattr(descr, '__get__'):
+                            try:
+                                return self.__dict__[attr]
+                            except KeyError:
+                                return descr
+                        if hasattr(descr, '__set__'):
+                            return descr.__get__(self, type(self))
+                        else:
+                            try:
+                                return self.__dict__[attr]
+                            except KeyError:
+                                pass
+                            return descr.__get__(self, type(self))
+                    '''
+                    
+                    assert bs.flow.stack.pop() is self
+                    bs.code += isa.pop(registers.r13)
+                    bs.code += isa.push(MemRef(registers.r13)) # slot id
+                    def _(value):
+                        def _(bs):
+                            slots = protoslots[value]
+                            if attr in slots:
+                                type, pos = slots[attr]
+                                bs.code += isa.mov(registers.r14, MemRef(registers.r13, 8))
+                                for i in reversed(xrange(type.size)):
+                                    bs.code += isa.push(MemRef(registers.r14, 8 * (pos + i)))
+                                bs.flow.stack.append(type)
+                            else:
+                                if self.type is None:
+                                    bs.this.append(fail_func())
+                                    return
+                                assert False, attr
+                        return _
+                    util.unlift(bs, _, "ProtoInstance.const_getattr")
+                else:
+                    if bs.flow.stack[-1] is Function:
+                        util.swap(bs)
+                        methods[self].load()(bs)
+                    else:
+                        assert not isinstance(bs.flow.stack[-1], Method)
+                        util.rem1(bs)
         return _
     def delattr_const_string(self, attr):
         def _(bs):
             assert bs.flow.stack.pop() is self
+            assert False
         return _
     def get_slots(self, var_types):
         pos = 0
@@ -1487,12 +1468,91 @@ class WrappedProtoInstance(object):
                 bs.code += isa.push(i)
             bs.flow.stack.append(self.type)
         return _
-            
 
 # store slot in bs.flow.stack once we know it ... though it can change in functions and (undetectibly) other threads .. D:
 # i hate threads
 
 protoinstances = util.cdict(ProtoInstance)
+
+class ProtoInstance2(_Type):
+    size = 0
+    def __init__(self, type):
+        _Type.__init__(self)
+        self.type = type
+        from objects.upperdict import UpperDict
+        self.dict2 = UpperDict("ProtoInstance2")
+    def new(self):
+        def _(bs):
+            bs.flow.stack.append(self)
+        return _
+    def const_getattr(self, attr, skip_dict=False):
+        if attr == '__class__':
+            def _(bs):
+                util.discard(bs)
+                assert self.type.size == 0
+                bs.flow.stack.append(self.type)
+            return _
+        if attr == '__dict__':
+            def _(bs):
+                util.discard(bs)
+                from objects.upperdict import upperdicttypes
+                bs.flow.stack.append(upperdicttypes[self.dict2])
+            return _
+        def _(bs):
+            from objects.upperdict import Unset
+            def get_attr(mro):
+                def _(bs):
+                    if not mro:
+                        bs.flow.stack.append(Unset)
+                    else:
+                        bs.this.append(mro[0].dict2.load_name(attr))
+                        @bs.this.append
+                        def _(bs):
+                            if bs.flow.stack[-1] is Unset:
+                                bs.flow.stack.pop()
+                                bs.this.append(get_attr(mro[1:]))
+                return _
+            bs.this.append(get_attr(self.type.mro))
+            
+            @bs.this.append
+            def _(bs):
+                if bs.flow.stack[-1] is Unset:
+                    bs.flow.stack.pop()
+                    util.discard(bs) # remove self
+                    bs.this.append(self.dict2.load_name(attr))
+                    @bs.this.append
+                    def _(bs):
+                        if bs.flow.stack[-1] is Unset:
+                            import mypyable
+                            bs.flow.stack.pop()
+                            bs.this.append(ast.Raise(
+                                type=ast.Call(
+                                    func=mypyable.AttributeError_impl.load,
+                                    args=[ast.Str(s=attr)],
+                                    keywords=[],
+                                    starargs=None,
+                                    kwargs=None,
+                                    ),
+                                inst=None,
+                                tback=None,
+                            ))
+                        return _
+                elif bs.flow.stack[-1] is Function:
+                    util.swap(bs)
+                    methods[self].load()(bs)
+                else:
+                    util.rem1(bs)
+        return _
+    def setattr_const_string(self, attr):
+        def _(bs):
+            #print attr, list(bs.flow.stack)
+            @bs.this.append
+            def _(bs):
+                assert bs.flow.stack.pop() is self
+            bs.this.append(self.dict2.store_name(attr))
+        return _
+    def to_python(self, data):
+        return WrappedProtoInstance(self, data)
 
 raw_strings = util.cdict(lambda s: ctypes.create_string_buffer(s))
 strings = util.cdict(lambda s: ctypes.create_string_buffer(struct.pack("L", len(s)) + s + "\x00"))
@@ -2371,6 +2431,7 @@ class FunctionStr(_Type):
                         
                     if isinstance(functions[value], str):
                         import mypyable
+                        print "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", functions[value]
                         bs.this.append(ast.Raise(
                             type=ast.Call(
                                 func=mypyable.AttributeError_impl.load,
