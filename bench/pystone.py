@@ -32,7 +32,7 @@ Version History:
 
 """
 
-LOOPS = 100000
+LOOPS = 1000000
 
 from time import clock
 
@@ -54,12 +54,13 @@ class Record:
         return Record(self.PtrComp, self.Discr, self.EnumComp,
                       self.IntComp, self.StringComp)
 
-TRUE = 1
-FALSE = 0
+TRUE = True
+FALSE = False
 
 def main(loops=LOOPS):
     benchtime, stones = pystones(loops)
-    print __version__, loops, benchtime, stones
+    print "Pystone(" + __version__ + ") time for " + str(loops) + " passes = " + str(benchtime)
+    print "This machine benchmarks at " + str(stones) + " pystones/second"
     #print "Pystone(%s) time for %d passes = %g" % \
     #      (__version__, loops, benchtime)
     #print "This machine benchmarks at %g pystones/second" % stones

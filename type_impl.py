@@ -48,6 +48,24 @@ class _Type(object):
             assert bs.flow.stack.pop() is self
             f(bs)
         return _
+    def setattr_const_string(self, s):
+        def _(bs):
+            import mypyable
+            util.discard(bs)
+            util.discard(bs)
+            bs.this.append(ast.Raise(
+                type=ast.Call(
+                    func=mypyable.AttributeError_impl.load,
+                    args=[ast.Str(s="<%r>.%r set" % (self, s))],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                    ),
+                inst=None,
+                tback=None,
+                ),
+            )
+        return _
     def to_python(self, data):
         assert False
 #_Type = Type.__class__
@@ -2508,6 +2526,7 @@ class Function(_Type):
                                     #    util.rem1(bs)
                                     #    print "stack unrolled to", bs.flow.stack
                                     bs.flow.try_stack.pop()(bs)
+                                    #print bs.desc
                             return _
                         util.unlift(bs, _, "_Function.call (inner)")
                 return _

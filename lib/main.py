@@ -191,6 +191,9 @@ def help(object=_no_arg):
 def repr(object):
     return object.__repr__()
 
+def str(object):
+    return object.__str__()
+
 def hex(x):
     pass
 
@@ -525,25 +528,26 @@ sys.stdout = file_from_fileno(1, '<stdout>', 'w')
 sys.stderr = file_from_fileno(2, '<stderr>', 'w')
 sys.argv = __pyable__.args
 sys.path = []
-sys.path.append("test/")
 sys.path.append("lib/")
 sys.path.append("/usr/lib/python2.6/")
+sys.path.append("test/")
+sys.builtin_module_names = ['posix'] # keep os happy
 __pyable__.set_SysModule_impl(sys)
 
 def __import__(name):
     if name in sys.modules:
         return sys.modules[name]
-    r = module(name)
-    r.__doc__ = None
-    r.__package__ = None
     for path in sys.path:
         try:
             f = open(path + name + ".py")
         except IOError:
             continue
         f = f.read()
-        exec f in __pyable__.top_scope, r.__dict__
+        r = module(name)
         sys.modules[name] = r
+        r.__doc__ = None
+        r.__package__ = None
+        exec f in __pyable__.top_scope, r.__dict__
         return r
     else:
         raise ImportError(name)
@@ -598,8 +602,11 @@ class property(object):
 
 if len(sys.argv):
     try:
-        __name__ = "__main__"
-        exec open(sys.argv[0]).read()
+        r = module("__main__")
+        sys.modules["__main__"] = r
+        r.__doc__ = None
+        r.__package__ = None
+        exec open(sys.argv[0]).read() in __pyable__.top_scope, r.__dict__
     except Exception, e:
         print "error:", e
 else:

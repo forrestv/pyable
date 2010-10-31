@@ -407,6 +407,8 @@ def dup(bs):
     push(bs, a)
 
 def lower(bs, n):
+    assert n >= 0
+    if n == 0: return
     regs = list(good_regs)
     a = pop(bs, regs)
     d = 0

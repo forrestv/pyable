@@ -165,6 +165,8 @@ class NonGenerator(Executable):
 class AnnotatedStack(object):
     def __init__(self):
         self.stack = []
+    def __len__(self):
+        return len(self.stack)
     def dup_other(self, other):
         self.stack = list(other.stack)
     def pop(self):
@@ -459,7 +461,7 @@ def translate(desc, flow, stack=None, this=None):
             ))
         elif isinstance(t, ast.Assign):
             bs.this.append(t.value)
-            
+
             for i, target in enumerate(t.targets):
                 assert isinstance(target.ctx, ast.Store)
                 
@@ -1080,9 +1082,20 @@ def translate(desc, flow, stack=None, this=None):
             def _(bs):
                 bs.flow.return_stack.pop()(bs)
         elif isinstance(t, ast.Raise):
-            assert t.inst is None
             assert t.tback is None
-            bs.this.append(t.type)
+            if t.inst is not None:
+                bs.this.append(ast.Call(
+                    func=t.type,
+                    args=[t.inst],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                ))
+            else:
+                bs.this.append(t.type)
+                @bs.this.append
+                def _(bs):
+                    assert not isinstance(bs.flow.stack[-1], type_impl.ProtoObject) # should call
             @bs.this.append
             def _(bs):
                 bs.flow.try_stack.pop()(bs)
@@ -1221,17 +1234,30 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.ImportFrom):
             assert t.level == 0
             bs.this.append(get_module(t.module))
-            for name in t.names:
+            for i, name in enumerate(t.names):
                 assert isinstance(name, ast.alias)
-                bs.this.append(ast.Assign(
-                    targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
-                    value=ast.Attribute(
-                            value=util.dup,
+                if name.name == '*':
+                    bs.this.append(ast.Attribute(
+                        value=lambda bs, t=t: None if i == len(t.names) - 1 else util.dup,
+                        attr="__dict__",
+                        ctx=ast.Load(),
+                        ),
+                    )
+                    @bs.this.append
+                    def _(bs):
+                        type = bs.flow.stack.pop()
+                        from objects.upperdict import UpperDictType
+                        assert isinstance(type, UpperDictType), type
+                        bs.flow.scopes.append(type.dict)
+                else:
+                    bs.this.append(ast.Assign(
+                        targets=[ast.Name(id=name.name if name.asname is None else name.asname, ctx=ast.Store())],
+                        value=ast.Attribute(
+                            value=lambda bs, t=t: None if i == len(t.names) - 1 else util.dup,
                             attr=name.name,
                             ctx=ast.Load(),
                             ),
-                ))
-            bs.this.append(util.discard)
+                    ))
         elif isinstance(t, ast.Attribute):
             if isinstance(t.ctx, ast.Load):
                 bs.this.append(t.value)
@@ -1394,10 +1420,16 @@ def translate(desc, flow, stack=None, this=None):
             def _(bs, call_stack=list(bs.call_stack), flow=bs.flow.clone(), t=t):
                 bs.call_stack[:] = call_stack
                 bs.flow.ctrl_stack[:] = flow.ctrl_stack
+                assert bs.flow.return_stack == flow.ctrl_stack
                 assert bs.flow.try_stack == flow.try_stack
+                
+                util.lower(bs, len(bs.flow.stack) - (len(flow.stack) + 1))
                 
                 bs.this = []
                 bs.this.append(t.finalbody)
+                @bs.this.append
+                def _(bs):
+                    bs.flow.try_stack.pop()(bs)
             bs.this.append(t.body)
             @bs.this.append
             def _(bs, t=t):
@@ -1422,12 +1454,15 @@ def translate(desc, flow, stack=None, this=None):
                         if catch_type is None or catch_type.isinstance(exc_type):
                             bs.call_stack[:] = call_stack
                             bs.flow.ctrl_stack[:] = flow.ctrl_stack
+                            assert bs.flow.return_stack == flow.return_stack
                             assert bs.flow.try_stack == flow.try_stack
                             
                             #print bs.flow.stack, flow.stack
                             #for i in xrange(len(bs.flow.stack) - len(flow.stack)):
                             #    print i
                             #    util.rem1(bs)
+                            
+                            util.lower(bs, len(bs.flow.stack) - (len(flow.stack) + 1))
                             
                             bs.this = []
                             
@@ -1437,6 +1472,9 @@ def translate(desc, flow, stack=None, this=None):
                                 bs.this.append(handler.name)
                             
                             bs.this.append(handler.body)
+                @bs.this.append
+                def _(bs):
+                    bs.flow.try_stack.pop()(bs)
             bs.this.append(t.body)
             @bs.this.append
             def _(bs):
