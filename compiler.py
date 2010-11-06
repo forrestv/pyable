@@ -1308,13 +1308,8 @@ def translate(desc, flow, stack=None, this=None):
                 kwargs=None,
             ))
             
-            bs.this.append(ast.Assign(
-                targets=[ast.Name(id=t.name, ctx=ast.Store())],
-                value=util.dup,
-            ))
-            
             bs.this.append(ast.Attribute(
-                value=lambda bs: None,
+                value=util.dup,
                 attr="__dict__",
                 ctx=ast.Load(),
             ))
@@ -1331,12 +1326,18 @@ def translate(desc, flow, stack=None, this=None):
             @bs.this.append
             def _(bs):
                 bs.flow.scopes.pop()
+            
+            bs.this.append(ast.Assign(
+                targets=[ast.Name(id=t.name, ctx=ast.Store())],
+                value=lambda bs: None,
+            ))
         elif isinstance(t, ast.Delete):
             for target in t.targets:
                 assert isinstance(target.ctx, ast.Del)
                 bs.this.append(target)
         elif isinstance(t, ast.Index):
             bs.this.append(t.value)
+            # should call __index__ ... ? XXX
             #assert Fal
         elif isinstance(t, ast.Slice):
             bs.this.append(t.lower if t.lower is not None else type_impl.NoneType.load())

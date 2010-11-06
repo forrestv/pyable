@@ -70,6 +70,9 @@ class _Type(object):
         assert False
 #_Type = Type.__class__
 
+class Object(_Type):
+    pass
+
 @apply
 class IntAbsMeth(_Type):
     size = 1
@@ -77,8 +80,8 @@ class IntAbsMeth(_Type):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
-            bs.code += isa.pop(registers.rdi)
-            bs.code += isa.mov(registers.rax, registers.rdi)
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.mov(registers.rdi, registers.rax)
             bs.code += isa.cqo()
             bs.code += isa.mov(registers.rax, registers.rdx)
             bs.code += isa.xor(registers.rax, registers.rdi)
@@ -235,8 +238,8 @@ class IntAndMeth(_Type):
                 bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
-            bs.code += isa.pop(registers.rbx)
             bs.code += isa.pop(registers.rax)
+            bs.code += isa.pop(registers.rbx)
             bs.code += isa.and_(registers.rax, registers.rbx)
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Int)
@@ -298,8 +301,8 @@ class IntMulMeth(_Type):
                 bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
-            bs.code += isa.pop(registers.rbx)
             bs.code += isa.pop(registers.rax)
+            bs.code += isa.pop(registers.rbx)
             bs.code += isa.imul(registers.rax, registers.rbx)
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Int)
@@ -822,7 +825,8 @@ class _TupleGetitemMeth(_Type):
     def call(self, arg_types):
         assert arg_types == (Int,)
         def _(bs):
-            assert bs.flow.stack.pop() is Int
+            type, hint = bs.flow.stack.pop2()
+            assert type is Int
             bs.code += isa.pop(registers.r13) # index
             assert bs.flow.stack.pop() is self
             bs.code += isa.pop(registers.r12)
@@ -830,7 +834,6 @@ class _TupleGetitemMeth(_Type):
             #bs.code += isa.mul(registers.rbx, 8)
             #bs.code += isa.add(registers.rbx, 8)
             
-            bs.code += isa.push(registers.r13)
             
             def _(value):
                 def _(bs):
@@ -839,7 +842,11 @@ class _TupleGetitemMeth(_Type):
                         bs.code += isa.push(MemRef(registers.r12, self.arg_size * 8 - sum(x.size for x in self.arg_types[:value]) * 8 - 8))
                     bs.flow.stack.append(self.arg_types[value])
                 return _
-            util.unlift(bs, _, "ProtoTuple.getitem")
+            if hint is None:
+                bs.code += isa.push(registers.r13)
+                util.unlift(bs, _, "ProtoTuple.getitem")
+            else:
+                bs.this.append(_(hint))
         return _
 
 tuplegetitemmeths = util.cdict(_TupleGetitemMeth)
