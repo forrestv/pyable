@@ -21,15 +21,13 @@ class Executable(object):
         # scopes is a list of types, actual data is passed in as a pointer to the values in the function
         self.produced = util.cdict(self.produce)
         self.scopes = scopes
-        self.id = len(type_impl.functions)
-        type_impl.functions.append(self)
     def call(self, arg_types=()):
         def _(bs):
             util.add_redirection(bs.code, lambda rdi: util.get_call(self.produced[arg_types]))
         return _
     def produce(self, arg_types):
         return translate(
-            flow=Flow(self),
+            flow=Flow(self.scopes),
             desc="exec " + self.name + " " + repr(arg_types),
             this=[
                 self.pre(arg_types),
@@ -55,9 +53,9 @@ def Function(scopes, t):
 
 class NonGenerator(Executable):
     def __init__(self, scopes, t):
-        Executable.__init__(self, scopes)
         assert isinstance(t, ast.FunctionDef)
         self.t = t
+        Executable.__init__(self, scopes)
     @property
     def name(self):
         return self.t.name
@@ -77,6 +75,7 @@ class NonGenerator(Executable):
         # memory access uses rbp
         # we need old stack current memory access
         assert len(arg_types) <= len(self.t.args.args), [arg_types, self.t.args.args, self.name]
+        assert len(arg_types) >= len(self.t.args.args) - len(self.t.args.defaults)
         pos = 16
         for i, (arg_type, t) in enumerate(reversed(zip(arg_types, self.t.args.args))):
             assert isinstance(t, ast.Name)
@@ -150,14 +149,13 @@ class NonGenerator(Executable):
     def load(self):
         def _(bs):
             assert self.scopes == [None]
-            bs.code += isa.push(self.id)
             bs.code += isa.push(0)
-            bs.flow.stack.append(type_impl.Function)
+            bs.flow.stack.append(type_impl.functions[self])
         return _
     def create(self):
         def _(bs):
             alloc_locals(bs)
-            bs.this.append(type_impl.Function.create(self.id))
+            bs.this.append(type_impl.functions[self].create())
         return _
 
 #class Generator(object):
@@ -190,7 +188,7 @@ class AnnotatedStack(object):
             return self.stack[index][0]
 
 class StackScope(object):
-    def __init__(self, names):
+    def __init__(self, names=()):
         self.names = names
         self._names_dict = {}
         for i, (name, type) in enumerate(self.names):
@@ -240,10 +238,12 @@ class StackScope(object):
 stackscopes = util.cdict(StackScope)
 
 class Flow(object):
-    def __init__(self, executable):
-        from objects.upperdict import UpperDict
-        self.executable = executable
-        self.scopes = executable.scopes + [stackscopes[()] if executable.scopes != [None] else UpperDict("flow")]
+    def __init__(self, scopes=None):
+        if scopes is None:
+            from objects.upperdict import UpperDict
+            self.scopes = [None, UpperDict("root")]
+        else:
+            self.scopes = scopes + [StackScope()]
         self.stack = AnnotatedStack()
         self.ctrl_stack = []
         self.try_stack = []
@@ -262,7 +262,7 @@ class Flow(object):
         return self.__dict__ == other.__dict__
     
     def clone(self):
-        r = Flow(self.executable)
+        r = Flow()
         r.scopes[:] = self.scopes
         r.stack.dup_other(self.stack)
         r.ctrl_stack[:] = self.ctrl_stack
@@ -443,7 +443,7 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.Module):
             assert False
         elif isinstance(t, ast.Lambda):
-            Function(bs.flow.scopes, ast.FunctionDef(
+            Function(list(bs.flow.scopes), ast.FunctionDef(
                 name="<lambda>",
                 args=t.args,
                 body=ast.Return(t.body),
@@ -452,7 +452,7 @@ def translate(desc, flow, stack=None, this=None):
         elif isinstance(t, ast.FunctionDef):
             bs.this.append(ast.Assign(
                 targets=[ast.Name(id=t.name, ctx=ast.Store())],
-                value=Function(bs.flow.scopes, t).create(),
+                value=Function(list(bs.flow.scopes), t).create(),
             ))
         elif isinstance(t, ast.AugAssign):
             bs.this.append(ast.Assign(
@@ -498,6 +498,9 @@ def translate(desc, flow, stack=None, this=None):
                                 if mypyable.NameError_impl is None:
                                     bs.this.append(ast.Raise(ast.Str(s=name + " is not set!"), None, None))
                                     return
+                                #print name
+                                #for a in bs.flow.scopes: print a
+                                #print
                                 bs.this.append(ast.Raise(
                                     type=ast.Call(
                                         func=mypyable.NameError_impl.load,
@@ -539,7 +542,7 @@ def translate(desc, flow, stack=None, this=None):
             def make_post(flow, stack=list(bs.call_stack)):
                 return translate("if_post", flow, stack=stack)
             
-            #@util.memoize
+            @util.memoize
             def make_orelse(flow, t=t, make_post=make_post):
                 return translate("if_orelse", flow, this=[
                     t.orelse,
@@ -547,44 +550,58 @@ def translate(desc, flow, stack=None, this=None):
                     end,
                 ])
             
-            #@util.memoize
+            @util.memoize
             def make_body(flow, t=t, make_post=make_post):
                 return translate("if_body", flow, this=[
                     t.body,
                     lambda bs: util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_post(bs.flow))),
                     end,
                 ])
-            
-            bs.this.append(
-                ast.Call(
-                    func=ast.Attribute(
-                        value=t.test,
-                        attr='__nonzero__',
-                        ctx=ast.Load(),
-                        ),
-                    args=[],
-                    keywords=[],
-                    starargs=None,
-                    kwargs=None,
-                    ),
-                )
+            bs.this.append(t.test)
+            @bs.this.append
+            def _(bs):
+                if bs.flow.stack[-1] not in (type_impl.Int, type_impl.Bool):
+                    bs.this.append(
+                        ast.Call(
+                            func=ast.Attribute(
+                                value=lambda bs: None,
+                                attr='__nonzero__',
+                                ctx=ast.Load(),
+                                ),
+                            args=[],
+                            keywords=[],
+                            starargs=None,
+                            kwargs=None,
+                            ),
+                        )
             @bs.this.append
             def _(bs, t=t, make_orelse=make_orelse, make_body=make_body):
-                type = bs.flow.stack.pop()
+                type, hint = bs.flow.stack.pop2()
                 assert type is type_impl.Int or type is type_impl.Bool, type
+                if hint is not None and True:
+                    bs.flow.stack.append(type)
+                    util.discard(bs)
+                    #print "HINTED HERE", hint
+                    if hint:
+                        bs.this.append(t.body)
+                    else:
+                        bs.this.append(t.orelse)
+                    return
                 bs.code += isa.pop(registers.rax)
                 bs.code += isa.test(registers.rax, registers.rax)
                 skip = bs.program.get_unique_label()
                 bs.code += isa.jz(skip)
-                util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_body(bs.flow)))
+                def check(x, y):
+                    assert x, y
+                util.add_redirection(bs.code, lambda rdi: (check(hint is None or hint, (0, type, hint)), util.get_jmp(make_body(bs.flow)))[1])
                 bs.code += skip
-                util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_orelse(bs.flow)))
-            bs.this.append(end)
+                util.add_redirection(bs.code, lambda rdi: (check(hint is None or not hint, (1, type, hint)), util.get_jmp(make_orelse(bs.flow)))[1])
+                bs.this.append(end)
         elif isinstance(t, ast.While):
             @util.memoize
             def make_a(flow, t=t):
                 def _(bs):
-                    type = bs.flow.stack.pop()
+                    type, hint = bs.flow.stack.pop2()
                     assert type is type_impl.Int or type is type_impl.Bool
                     bs.code += isa.pop(registers.rax)
                     bs.code += isa.cmp(registers.rax, 0)
@@ -594,8 +611,24 @@ def translate(desc, flow, stack=None, this=None):
                     bs.code += skip
                     util.add_redirection(bs.code, lambda rdi: util.get_jmp(make_c(bs.flow)))
                 
+                def _2(bs):
+                    if bs.flow.stack[-1] not in (type_impl.Int, type_impl.Bool):
+                        bs.this.append(
+                            ast.Call(
+                                func=ast.Attribute(
+                                    value=lambda bs: None,
+                                    attr='__nonzero__',
+                                    ctx=ast.Load(),
+                                    ),
+                                args=[],
+                                keywords=[],
+                                starargs=None,
+                                kwargs=None,
+                                ),
+                            )
                 return translate("while_a", flow, this=[
                     t.test,
+                    _2,
                     _,
                     end,
                 ])
@@ -652,14 +685,19 @@ def translate(desc, flow, stack=None, this=None):
                     
                     if right_type is not left_type:
                         bs.code += isa.push(0 if isinstance(op, ast.Is) else 1)
+                        bs.flow.stack.append2(type_impl.Bool, not isinstance(op, ast.Is))
                     else:
-                        bs.code += isa.mov(registers.rax, 1 if isinstance(op, ast.Is) else 0)
-                        bs.code += isa.mov(registers.r15, 0 if isinstance(op, ast.Is) else 1)
-                        for reg_r, reg_l in zip(right_registers, left_registers):
-                            bs.code += isa.cmp(reg_r, reg_l)
-                            bs.code += isa.cmovne(registers.rax, registers.r15)
-                        bs.code += isa.push(registers.rax)
-                    bs.flow.stack.append(type_impl.Int)
+                        if right_type.size:
+                            bs.code += isa.mov(registers.rax, 1 if isinstance(op, ast.Is) else 0)
+                            bs.code += isa.mov(registers.r15, 0 if isinstance(op, ast.Is) else 1)
+                            for reg_r, reg_l in zip(right_registers, left_registers):
+                                bs.code += isa.cmp(reg_r, reg_l)
+                                bs.code += isa.cmovne(registers.rax, registers.r15)
+                            bs.code += isa.push(registers.rax)
+                            bs.flow.stack.append(type_impl.Bool)
+                        else:
+                            bs.code += isa.push(1 if isinstance(op, ast.Is) else 0)
+                            bs.flow.stack.append2(type_impl.Bool, isinstance(op, ast.Is))
             else:
                 if isinstance(op, ast.Lt): r = "lt"
                 elif isinstance(op, ast.LtE): r = "le"
@@ -853,13 +891,8 @@ def translate(desc, flow, stack=None, this=None):
                     true = bs.program.get_unique_label()
                     end = bs.program.get_unique_label()
                     bs.code += isa.pop(registers.rax)
-                    bs.code += isa.cmp(registers.rax, 0)
-                    bs.code += isa.je(true)
-                    bs.code += isa.push(0)
-                    bs.code += isa.jmp(end)
-                    bs.code += true
-                    bs.code += isa.push(1)
-                    bs.code += end
+                    bs.code += isa.xor(registers.rax, 1)
+                    bs.code += isa.push(registers.rax)
         elif isinstance(t, ast.BinOp):
             if isinstance(t.op, ast.Add): r = "add"
             elif isinstance(t.op, ast.Sub): r = "sub"
@@ -931,28 +964,29 @@ def translate(desc, flow, stack=None, this=None):
                 return translate("boolop_post", flow, stack=stack)
             
             for value in t.values[:-1]:
+                #@bs.this.append
+                #def _(bs):
+                #    #type = bs.flow.stack[-1]
+                #    #for i in xrange(type.size):
+                #    #    bs.code += isa.push(MemRef(registers.rsp, 8 * (type.size - 1))) # check this!
+                #    #bs.flow.stack.append(type)
+                #    util.dup(bs)
+                #    def _(bs):
+                #        assert bs.flow.stack[-1] is bs.flow.stack[-2] is type
                 bs.this.append(value)
-                @bs.this.append
-                def _(bs):
-                    type = bs.flow.stack[-1]
-                    for i in xrange(type.size):
-                        bs.code += isa.push(MemRef(registers.rsp, 8 * (type.size - 1))) # check this!
-                    bs.flow.stack.append(type)
-                    def _(bs):
-                        assert bs.flow.stack[-1] is bs.flow.stack[-2] is type
-                    bs.this.append(
-                        ast.Call(
-                            func=ast.Attribute(
-                                value=_,
-                                attr='__nonzero__',
-                                ctx=ast.Load(),
-                                ),
-                            args=[],
-                            keywords=[],
-                            starargs=None,
-                            kwargs=None,
+                bs.this.append(
+                    ast.Call(
+                        func=ast.Attribute(
+                            value=util.dup,
+                            attr='__nonzero__',
+                            ctx=ast.Load(),
                             ),
-                        )
+                        args=[],
+                        keywords=[],
+                        starargs=None,
+                        kwargs=None,
+                        ),
+                    )
                 @bs.this.append
                 def _(bs, t=t, make_post=make_post):
                     assert bs.flow.stack.pop() in (type_impl.Int, type_impl.Bool)
@@ -1010,30 +1044,13 @@ def translate(desc, flow, stack=None, this=None):
                 assert False, t.ctx
         elif isinstance(t, ast.Subscript):
             if isinstance(t.ctx, ast.Load):
-                bs.this.append(t.value)
-                
-                bs.this.append(t.slice)
-                
-                #   self, index
-                # swap
-                #   index, self
-                # getattr(-1, "__getitem__")
-                #   index, __getitem__ method
-                # swap
-                #   __getitem__ method, index
-                # call
-                #   result
-                
-                def _(bs):
-                    pass
-                
-                bs.this.append(util.swap)
-                
-                bs.this.append(ast.Attribute(value=_, attr='__getitem__', ctx=ast.Load()))
-                
-                bs.this.append(util.swap)
-                
-                bs.this.append(ast.Call(func=_, args=[_], keywords=[], starargs=None, kwargs=None, name="sub"))
+                bs.this.append(ast.Call(
+                    func=ast.Attribute(value=t.value, attr='__getitem__', ctx=ast.Load()),
+                    args=[t.slice],
+                    keywords=[],
+                    starargs=None,
+                    kwargs=None,
+                ))
             elif isinstance(t.ctx, ast.Store):
                 bs.this.append(t.value)
                 
@@ -1080,6 +1097,7 @@ def translate(desc, flow, stack=None, this=None):
                 bs.this.append(t.value)
             @bs.this.append
             def _(bs):
+                #print bs.flow.stack.stack
                 bs.flow.return_stack.pop()(bs)
         elif isinstance(t, ast.Raise):
             assert t.tback is None
@@ -1263,6 +1281,7 @@ def translate(desc, flow, stack=None, this=None):
                 bs.this.append(t.value)
                 @bs.this.append
                 def _(bs, t=t):
+                    #print list(bs.flow.stack), bs.flow.scopes
                     bs.this.append(bs.flow.stack[-1].const_getattr(t.attr))
             elif isinstance(t.ctx, ast.Store):
                 bs.this.append(t.value)
@@ -1355,13 +1374,14 @@ def translate(desc, flow, stack=None, this=None):
                                 tback=None,
                             ))
                         else:
+                            old_scopes = list(bs.flow.scopes)
                             from objects.upperdict import UpperDictType
                             assert isinstance(tree, ast.Module)
                             globals_type = bs.flow.stack.pop()
                             if isinstance(globals_type, UpperDictType):
-                                bs.flow.scopes.append(None)
                                 assert globals_type.dict is not None, globals_type
                                 bs.flow.scopes.append(globals_type.dict)
+                                bs.flow.scopes[:] = [None, globals_type.dict]
                             elif globals_type is type_impl.NoneType:
                                 pass
                             else:
@@ -1372,6 +1392,7 @@ def translate(desc, flow, stack=None, this=None):
                                                                 
                                 alloc_locals(bs) # HACK, we should instead put this in the scope linked list
                                 
+                                assert False
                                 bs.code += isa.pop(registers.r12)
                                 
                                 bs.code += isa.mov(registers.rdi, 8 * 4)
@@ -1411,8 +1432,8 @@ def translate(desc, flow, stack=None, this=None):
                             if isinstance(globals_type, UpperDictType):
                                 @bs.this.append
                                 def _(bs, globals_type=globals_type):
-                                    assert bs.flow.scopes.pop() is globals_type.dict
-                                    assert bs.flow.scopes.pop() is None
+                                    assert bs.flow.scopes == [None, globals_type.dict]
+                                    bs.flow.scopes[:] = old_scopes
                     return _
                 util.unlift_noncached(bs, exec_it, "exec")
         elif isinstance(t, ast.TryFinally):
@@ -1487,7 +1508,7 @@ def translate(desc, flow, stack=None, this=None):
             def make_c_normal(flow, stack=list(bs.call_stack), number=number, t=t):
                 def _(bs):
                     util.discard(bs)
-                    bs.flow.return_stack.pop()
+                    #bs.flow.return_stack.pop()
                     removed = bs.flow.ctrl_stack.pop()
                     assert removed[2] == number
                 return translate("while_c", flow, stack=stack, this=[
@@ -1499,7 +1520,7 @@ def translate(desc, flow, stack=None, this=None):
             def make_c(flow, stack=list(bs.call_stack), number=number):
                 def _(bs):
                     util.discard(bs)
-                    bs.flow.return_stack.pop()
+                    #bs.flow.return_stack.pop()
                     removed = bs.flow.ctrl_stack.pop()
                     assert removed[2] == number
                 return translate("while_c", flow, stack=stack, this=[
@@ -1564,11 +1585,11 @@ def translate(desc, flow, stack=None, this=None):
                     kwargs=None,
                     ),
                 )
-            @bs.flow.return_stack.append
-            def for_returner(bs):
-                # pop iterator
-                util.rem1(bs)
-                bs.flow.return_stack.pop()(bs)
+            #@bs.flow.return_stack.append
+            #def for_returner(bs):
+            #    # pop iterator
+            #    util.rem1(bs)
+            #    bs.flow.return_stack.pop()(bs)
             @bs.this.append
             def _(bs, make_a=make_a, make_c=make_c, number=number):
                 bs.flow.ctrl_stack.append([

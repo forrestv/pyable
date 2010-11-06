@@ -122,6 +122,7 @@ def called_from_asm(func):
         except:
             traceback.print_exc()
             os._exit(0)
+            print "umm"
     return f
 
 class UpdatableMovRax(object):
@@ -370,7 +371,7 @@ def push(bs, (type, regs)):
         bs.code += isa.push(reg)
     bs.flow.stack.append(type)
 
-good_regs = [registers.rbx, registers.rcx, registers.rdx, registers.rdi, registers.rsi, registers.r9]
+good_regs = [registers.rbx, registers.rcx, registers.rdx, registers.rdi, registers.rsi, registers.r9, registers.r10, registers.r11, registers.r12]
 
 def swap(bs):
     regs = list(good_regs)
@@ -407,7 +408,7 @@ def dup(bs):
     push(bs, a)
 
 def lower(bs, n):
-    assert n >= 0
+    assert n >= 0, n
     if n == 0: return
     regs = list(good_regs)
     a = pop(bs, regs)
@@ -419,16 +420,30 @@ def lower(bs, n):
         bs.code += isa.add(registers.rsp, 8*d)
     push(bs, a)
 
-def discard(bs):
-    type = bs.flow.stack.pop()
-    if type.size:
-        bs.code += isa.add(registers.rsp, 8*type.size)
+def discard(bs, n=1):
+    d = 0
+    for i in xrange(n):
+        d += bs.flow.stack.pop().size
+    if d:
+        bs.code += isa.add(registers.rsp, 8 * d)
 
 def discard2(bs):
     type = bs.flow.stack.pop()
     type1 = bs.flow.stack.pop()
     if type.size + type1.size:
         bs.code += isa.add(registers.rsp, 8*(type.size+type1.size))
+
+def dup_lower(bs, level):
+    # 0 = dup
+    skip = sum(x.size for x in bs.flow.stack[-1-level:])
+    type = bs.flow.stack[-1-level]
+    #print skip, bs.flow.stack[-1-level:]
+    #print "skip =", skip, level
+    if type.size:
+        bs.code += isa.mov(registers.rax, 8 * skip - 8)
+        for i in xrange(type.size):
+            bs.code += isa.push(MemRef(registers.rsp, 0, registers.rax))
+    bs.flow.stack.append(type)
 
 class WatchedValue(object):
     def __init__(self, value):

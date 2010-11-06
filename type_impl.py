@@ -94,6 +94,12 @@ class IntNonzeroMeth(_Type):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
+            bs.code += isa.pop(registers.rax)
+            bs.code += isa.mov(registers.rbx, 1)
+            bs.code += isa.test(registers.rax, registers.rax)
+            bs.code += isa.mov(registers.rax, 0)
+            bs.code += isa.cmovnz(registers.rax, registers.rbx)
+            bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Bool)
         return _
 
@@ -250,8 +256,8 @@ class IntAddMeth(_Type):
                 bs.code += isa.pop(registers.rax)
                 bs.flow.stack.append(NotImplementedType)
                 return
-            bs.code += isa.pop(registers.rbx)
             bs.code += isa.pop(registers.rax)
+            bs.code += isa.pop(registers.rbx)
             bs.code += isa.add(registers.rax, registers.rbx)
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Int)
@@ -1450,11 +1456,11 @@ class ProtoInstance(_Type):
                         return _
                     util.unlift(bs, _, "ProtoInstance.const_getattr")
                 else:
-                    if bs.flow.stack[-1] is Function:
+                    if isinstance(bs.flow.stack[-1], Function):
                         util.swap(bs)
-                        methods[self].load()(bs)
+                        methods[(bs.flow.stack[-2], bs.flow.stack[-1])].load()(bs)
                     else:
-                        assert not isinstance(bs.flow.stack[-1], Method)
+                        #assert not isinstance(bs.flow.stack[-1], Method)
                         util.rem1(bs)
         return _
     def delattr_const_string(self, attr):
@@ -1555,9 +1561,9 @@ class ProtoInstance2(_Type):
                                 tback=None,
                             ))
                         return _
-                elif bs.flow.stack[-1] is Function:
+                elif isinstance(bs.flow.stack[-1], Function):
                     util.swap(bs)
-                    methods[self].load()(bs)
+                    methods[(bs.flow.stack[-2], bs.flow.stack[-1])].load()(bs)
                 else:
                     util.rem1(bs)
         return _
@@ -1980,33 +1986,36 @@ class StrOrdMeth(_Type):
         return _
 
 @apply
-class StrLenMeth(_Type):
+class StrNonZeroMeth(_Type):
     size = 1
     def call(self, arg_types):
         assert not arg_types
         def _(bs):
             assert bs.flow.stack.pop() is self
-            bs.code += isa.pop(registers.rax)
+            bs.code += isa.pop(registers.rbx)
             
             skip = bs.program.get_unique_label()
             end = bs.program.get_unique_label()
             
-            bs.code += isa.test(registers.rax, 1)
+            bs.code += isa.test(registers.rbx, 1)
             bs.code += isa.jz(skip)
-            bs.code += isa.shr(registers.rax, 1)
-            bs.code += isa.and_(registers.rax, 127)
+            bs.code += isa.shr(registers.rbx, 1)
+            bs.code += isa.and_(registers.rbx, 127)
             bs.code += isa.jmp(end)
             
             bs.code += skip
-            bs.code += isa.mov(registers.rax, MemRef(registers.rax))
+            bs.code += isa.mov(registers.rbx, MemRef(registers.rbx))
 
             bs.code += end
+            bs.code += isa.xor(registers.rax, registers.rax)
+            bs.code += isa.test(registers.rbx, registers.rbx)
+            bs.code += isa.setne(registers.al)
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(Int)
         return _
 
 @apply
-class StrNonZeroMeth(_Type):
+class StrLenMeth(_Type):
     size = 1
     def call(self, arg_types):
         assert not arg_types
@@ -2479,67 +2488,136 @@ class FunctionGet(_Type):
         return _
 
 @apply
+class StackSpace(object):
+    size = 1 + 100 * 4
+
 class Function(_Type):
-    size = 2
+    size = 1
+    def __init__(self, exe):
+        _Type.__init__(self)
+        self.exe = exe
+        self._scopes = exe.scopes
+        self.t = exe.t
+        #assert not any(isinstance(x, compiler.StackScope) for x in self._scopes)
     def getattr___get__(self, bs): bs.flow.stack.append(FunctionGet)
-    def getattr___str__(self, bs): bs.flow.stack.append(FunctionStr)
-    def getattr___repr__(self, bs): bs.flow.stack.append(FunctionStr)
+    def getattr___str__(self, bs): self.getattr___repr__(bs)
+    def getattr___repr__(self, bs):
+        bs.flow.stack.append(self)
+        util.discard(bs)
+        bs.this.append(ast.Attribute(
+            value=Str.load_constant("<function %s>" % (self.t.name,)),
+            attr="__str__",
+            ctx=ast.Load(),
+        ))
     def call(self, arg_types):
+        if len(self._scopes) != 2: # to not inline
+            def _(bs):
+                assert bs.flow.stack[-1 - len(arg_types)] is self, bs.flow.stack[-1 - len(arg_types)]
+                bs.this.append(self.exe.call(arg_types))
+                @bs.this.append
+                def _(bs):
+                    util.discard(bs, 1 + len(arg_types))
+                    bs.code += isa.push(registers.r12)
+                    def _(value):
+                        def _(bs):
+                            exc = value < 0
+                            if exc:
+                                type = id_to_type[~value]
+                            else:
+                                type = id_to_type[value]
+                            bs.flow.stack.append(type)
+                            if type.size >= 1:
+                                bs.code += isa.push(registers.r13)
+                            if type.size >= 2:
+                                bs.code += isa.push(registers.r14)
+                            if type.size >= 3:
+                                assert False
+                            if exc:
+                                bs.flow.try_stack.pop()(bs)
+                        return _
+                    util.unlift(bs, _, "Function.call")
+            return _
         def _(bs):
             assert bs.flow.stack[-1 - len(arg_types)] is self, bs.flow.stack[-1 - len(arg_types)]
-            arg_size = sum(x.size for x in arg_types)
-            bs.code += isa.mov(registers.rax, MemRef(registers.rsp, 8*arg_size + 8))
-            bs.code += isa.push(registers.rax)
+            flow = bs.flow.clone()
+            call_stack = list(bs.call_stack)
+            @bs.flow.return_stack.append
+            def _(bs, ):
+                bs.call_stack[:] = call_stack
+                bs.flow.ctrl_stack[:] = flow.ctrl_stack
+                bs.flow.scopes[:] = flow.scopes
+                bs.flow.return_stack[:] = flow.return_stack
+                bs.flow.try_stack[:] = flow.try_stack
+                
+                bs.code += isa.mov(registers.rbp, MemRef(registers.rbp, -8))
+                
+                util.lower(bs, len(bs.flow.stack) - (len(flow.stack) - 1 - len(arg_types) + 1))
+            @bs.flow.try_stack.append
+            def _(bs, call_stack=list(bs.call_stack)):
+                bs.call_stack[:] = call_stack
+                bs.flow.ctrl_stack[:] = flow.ctrl_stack
+                bs.flow.scopes[:] = flow.scopes
+                bs.flow.return_stack[:] = flow.return_stack
+                bs.flow.try_stack[:] = flow.try_stack
+                
+                bs.code += isa.mov(registers.rbp, MemRef(registers.rbp, -8))
+                
+                util.lower(bs, len(bs.flow.stack) - (len(flow.stack) - 1 - len(arg_types) + 1))
+                bs.flow.try_stack.pop()(bs)
+            assert not self.t.args.vararg
+            assert not self.t.args.kwarg
             
-            def _(value):
-                def _(bs):
-                    if isinstance(functions[value], str):
-                        assert False, functions[value]
-                    bs.this.append(functions[value].call(arg_types))
-                    @bs.this.append
-                    def _(bs):
-                        for arg_type in arg_types[::-1]:
-                            type = bs.flow.stack.pop()
-                            assert type is arg_type, (type, arg_type)
-                            for i in xrange(arg_type.size):
-                                bs.code += isa.pop(registers.rax)
-                        assert bs.flow.stack.pop() is self
-                        bs.code += isa.pop(registers.rax)
-                        bs.code += isa.pop(registers.rax)
-                        bs.code += isa.push(registers.r12) # unlift return type
-                        def _(value):
-                            def _(bs, value=value):
-                                exc = value < 0
-                                if exc:
-                                    value = ~value
-                                bs.flow.stack.append(id_to_type[value])
-                                if bs.flow.stack[-1].size >= 1:
-                                    bs.code += isa.push(registers.r13)
-                                if bs.flow.stack[-1].size >= 2:
-                                    bs.code += isa.push(registers.r14)
-                                if bs.flow.stack[-1].size >= 3:
-                                    assert False
-                                if exc:
-                                    #print "exception passed down with stack", bs.flow.stack
-                                    #if len(bs.flow.stack) - 1 != 0:
-                                    #for i in xrange(len(bs.flow.stack) - 1):
-                                    #    util.rem1(bs)
-                                    #    print "stack unrolled to", bs.flow.stack
-                                    bs.flow.try_stack.pop()(bs)
-                                    #print bs.desc
-                            return _
-                        util.unlift(bs, _, "_Function.call (inner)")
-                return _
-            util.unlift(bs, _, "_Function.call")
+            @bs.this.append
+            def _(bs):
+                bs.code += isa.mov(MemRef(registers.rsp, -8), registers.rbp)
+                bs.code += isa.mov(registers.rbp, registers.rsp)
+                bs.code += isa.sub(registers.rsp, 8 * StackSpace.size)
+                bs.flow.stack.append(StackSpace)
+                bs.flow.scopes[:] = list(self._scopes)
+                #assert not any(isinstance(x, compiler.StackScope) for x in self._scopes)
+                bs.flow.scopes.append(compiler.StackScope(()))
+                #bs.code += isa.ud2()
+            # pop uses rsp
+            # memory access uses rbp
+            # we need old stack current memory access
+            assert len(arg_types) <= len(self.t.args.args), [arg_types, self.t.args.args, self.name]
+            assert len(arg_types) >= len(self.t.args.args) - len(self.t.args.defaults)
+            pos = 16
+            for i, (arg_type, t) in enumerate(reversed(zip(arg_types, self.t.args.args))):
+                assert isinstance(t, ast.Name)
+                assert isinstance(t.ctx, ast.Param)
+                def _(bs, arg_type=arg_type, pos=pos, i=i):
+                    #print arg_type, bs.flow.stack[-2 - i]
+                    assert bs.flow.stack[-2 - i] is arg_type
+                    util.dup_lower(bs, 1 + i)
+                    assert bs.flow.stack[-1] is arg_type, list(bs.flow.stack)
+                bs.this.append(ast.Assign(
+                    targets=[ast.Name(id=t.id, ctx=ast.Store())],
+                    value=_,
+                ))
+            #@bs.this.append
+            #def _(bs, pos=pos):
+            #    bs.code += isa.mov(registers.rax, MemRef(registers.rbp, pos))
+            #    bs.code += isa.mov(MemRef(registers.rbp, -8), registers.rax)
+            for t, v in zip(self.t.args.args[::-1][:len(self.t.args.args)-len(arg_types)], self.t.args.defaults[::-1]):
+                #print arg_types, util.dump([t,v])
+                bs.this.append(ast.Assign(
+                    targets=[ast.Name(id=t.id, ctx=ast.Store())],
+                    value=v,
+                ))
+            #print util.dump(self.t)
+            #bs.this.append(ast.Print(dest=None, values=[ast.Str(s=self.t.name)], nl=True))
+            bs.this.append(self.t.body)
+            bs.this.append(ast.Return(value=None))
         return _
-    def create(self, key):
+    def create(self):
         def _(bs):
-            bs.code += isa.mov(registers.rax, key)
-            bs.code += isa.push(registers.rax)
             bs.code += isa.mov(registers.rax, MemRef(registers.rbp, -8))
             bs.code += isa.push(registers.rax)
             bs.flow.stack.append(self)
         return _
+
+functions = util.cdict(Function)
 
 @apply
 class GeneratorNext(_Type):
@@ -2552,19 +2630,25 @@ class Generator(_Type):
         bs.flow.stack.append(GeneratorNext)
 
 class _Method(_Type):
-    def __init__(self, self_type):
+    def __init__(self, (func_type, self_type)):
+        self.func_type = func_type
         self.self_type = self_type
-        self.size = Function.size + self.self_type.size
+        self.size = func_type.size + self.self_type.size
+        _Type.__init__(self)
     def getattr___str__(self, bs):
-        bs.flow.stack.append(Function)
+        bs.flow.stack.append(self.func_type)
         bs.flow.stack.append(self.self_type)
         util.discard(bs)
-        assert bs.flow.stack.pop() is Function
-        bs.flow.stack.append(FunctionStr)
+        bs.flow.this.append(ast.Attribute(
+            value=lambda bs: None,
+            attr="__str__",
+            ctx=ast.Load(),
+        ))
     def load(self):
         def _(bs):
+            #print bs.flow.stack.stack, (self.self_type, self.func_type)
             assert bs.flow.stack.pop() is self.self_type
-            assert bs.flow.stack.pop() is Function
+            assert bs.flow.stack.pop() is self.func_type
             
             bs.flow.stack.append(self)
         return _
@@ -2573,11 +2657,11 @@ class _Method(_Type):
             for arg in arg_types[::-1]:
                 assert bs.flow.stack.pop() is arg
             assert bs.flow.stack.pop() is self
-            bs.flow.stack.append(Function)
+            bs.flow.stack.append(self.func_type)
             bs.flow.stack.append(self.self_type)
             for arg in arg_types:
                 bs.flow.stack.append(arg)
-            bs.this.append(Function.call((self.self_type,) + arg_types))
+            bs.this.append(self.func_type.call((self.self_type,) + arg_types))
         return _
 
 methods = util.cdict(_Method)

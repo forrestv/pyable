@@ -32,7 +32,7 @@ Version History:
 
 """
 
-LOOPS = 1000000
+LOOPS = 3000000
 
 from time import clock
 
@@ -90,7 +90,7 @@ def Proc0(loops=LOOPS):
     global PtrGlbNext
 
     starttime = clock()
-    for i in range(loops):
+    for i in xrange(loops):
         pass
     nulltime = clock() - starttime
 
@@ -106,7 +106,7 @@ def Proc0(loops=LOOPS):
 
     starttime = clock()
 
-    for i in range(loops):
+    for i in xrange(loops):
         Proc5()
         Proc4()
         IntLoc1 = 2
@@ -219,7 +219,7 @@ def Proc8(Array1Par, Array2Par, IntParI1, IntParI2):
     Array1Par[IntLoc] = IntParI2
     Array1Par[IntLoc+1] = Array1Par[IntLoc]
     Array1Par[IntLoc+30] = IntLoc
-    for IntIndex in range(IntLoc, IntLoc+2):
+    for IntIndex in xrange(IntLoc, IntLoc+2):
         Array2Par[IntLoc][IntIndex] = IntLoc
     Array2Par[IntLoc][IntLoc-1] = Array2Par[IntLoc][IntLoc-1] + 1
     Array2Par[IntLoc+20][IntLoc] = Array1Par[IntLoc]

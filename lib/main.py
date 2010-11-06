@@ -134,7 +134,7 @@ class file(object):
         r = ""
         while True:
             c = libc.fgetc(self._file)
-            if c == 4294967295:
+            if c > 1000000:
                 return r
             c = chr(c)
             r += c
@@ -195,7 +195,7 @@ def str(object):
     return object.__str__()
 
 def hex(x):
-    pass
+    return object.__hex__()
 
 def id(x):
     pass
@@ -449,14 +449,16 @@ class dict(object):
             if l[i][0] == index:
                 return True
         return False
-        
 __pyable__.set_dict_impl(dict)
 
 def len(o):
     return o.__len__()
 
 def eval(s):
-    return __pyable__.eval(s)
+    exec "return " + s
+    #return __pyable__.eval(s)
+
+type = __pyable__.type
 
 class BaseException(object):
     pass
@@ -486,6 +488,12 @@ class SyntaxError(StandardError):
 __pyable__.set_SyntaxError_impl(SyntaxError)
 
 class ImportError(StandardError):
+    pass
+
+class ValueError(StandardError):
+    pass
+
+class EOFError(StandardError):
     pass
 
 class AssertionError(Exception):
@@ -561,6 +569,8 @@ def raw_input(prompt=None):
         sys.stdout.write(prompt)
         sys.stdout.flush()
     r = sys.stdin.readline()
+    if not r:
+        raise EOFError()
     return r
 
 class property(object):
@@ -600,12 +610,12 @@ class property(object):
         self.fdel = fdel
         return self
 
+r = module("__main__")
+sys.modules["__main__"] = r
+r.__doc__ = None
+r.__package__ = None
 if len(sys.argv):
     try:
-        r = module("__main__")
-        sys.modules["__main__"] = r
-        r.__doc__ = None
-        r.__package__ = None
         exec open(sys.argv[0]).read() in __pyable__.top_scope, r.__dict__
     except Exception, e:
         print "error:", e
@@ -618,9 +628,8 @@ else:
             if _line == "":
                 print
                 break
-            exec _line
+            exec _line in __pyable__.top_scope, r.__dict__
         except Exception, e:
-            print 1
             try:
                 print "error:", e
             except:

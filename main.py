@@ -16,6 +16,8 @@ import util
 import type_impl
 import compiler
 
+#sys.stdout = None
+
 filename = os.path.join(os.path.dirname(__file__), "lib", "main.py")
 
 if sys.argv[1:] and sys.argv[1] == "--debug":
@@ -74,6 +76,12 @@ def uncaught_exception(bs):
     #        kwargs=None,
     #        ),
     #    )
+    if 0:
+        bs.this.append(ast.Attribute(
+            value=lambda bs: None,
+            attr="message",
+            ctx=ast.Load(),
+        ))
     @bs.this.append
     def _(bs):
         assert bs.flow.stack[-1] is type_impl.Str, list(bs.flow.stack)
@@ -86,20 +94,22 @@ def uncaught_exception(bs):
         bs.code += isa.mov(registers.rsp, registers.rbp)
         bs.code += isa.pop(registers.rbp)
         bs.code += isa.ret()
+    bs.this.append(compiler.end)
 
 def make_root():
-    return compiler.translate("make_root", compiler.Flow(compiler.Executable([])), this=[
+    return compiler.translate("make_root", compiler.Flow(), this=[
         lambda bs: bs.code.add(isa.push(registers.rbp)),
         lambda bs: bs.code.add(isa.mov(registers.rbp, registers.rsp)),
         lambda bs: bs.flow.try_stack.append(uncaught_exception),
-        main_module.load(),
-        ast.Call(
-            func=lambda bs: None,
-            args=[],
-            keywords=[],
-            starargs=None,
-            kwargs=None,
-            ),
+        #main_module.load(),
+        #ast.Call(
+        #    func=lambda bs: None,
+        #    args=[],
+        #    keywords=[],
+        #    starargs=None,
+        #    kwargs=None,
+        #    ),
+        tree.body,
         lambda bs: bs.code.add(isa.mov(registers.rsp, registers.rbp)),
         lambda bs: bs.code.add(isa.pop(registers.rbp)),
         lambda bs: bs.code.add(isa.ret()),
@@ -109,7 +119,9 @@ def make_root():
 def caller():
     p = util.Program()
     code = p.get_stream()
-    util.add_redirection(code, lambda rdi: util.get_call(make_root()))
+    code += isa.mov(registers.rax, make_root())
+    code += isa.call(registers.rax)
+    #util.add_redirection(code, lambda rdi: util.get_call(make_root()))
     p.add(code)
     p.cache_code()
     util.debug(p, "caller")
