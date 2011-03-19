@@ -2018,7 +2018,7 @@ class StrNonZeroMeth(_Type):
             bs.code += isa.test(registers.rbx, registers.rbx)
             bs.code += isa.setne(registers.al)
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(Int)
+            bs.flow.stack.append(Bool)
         return _
 
 @apply
@@ -2044,7 +2044,7 @@ class StrLenMeth(_Type):
 
             bs.code += end
             bs.code += isa.push(registers.rax)
-            bs.flow.stack.append(Bool)
+            bs.flow.stack.append(Int)
         return _
 
 @apply
@@ -2517,7 +2517,8 @@ class Function(_Type):
             ctx=ast.Load(),
         ))
     def call(self, arg_types):
-        if len(self._scopes) != 2: # to not inline
+        #if len(self._scopes) != 2: # to not inline
+        if len(self.t.body) > 2:
             def _(bs):
                 assert bs.flow.stack[-1 - len(arg_types)] is self, bs.flow.stack[-1 - len(arg_types)]
                 bs.this.append(self.exe.call(arg_types))

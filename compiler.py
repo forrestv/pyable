@@ -446,7 +446,7 @@ def translate(desc, flow, stack=None, this=None):
             Function(list(bs.flow.scopes), ast.FunctionDef(
                 name="<lambda>",
                 args=t.args,
-                body=ast.Return(t.body),
+                body=[ast.Return(t.body)],
                 decorator_list=[],
             )).create()(bs)
         elif isinstance(t, ast.FunctionDef):
@@ -769,7 +769,7 @@ def translate(desc, flow, stack=None, this=None):
                     bs.code += label
                 '''
         elif isinstance(t, ast.Print):
-            if 1:
+            if 0:
                 assert t.dest is None
                 for value in t.values:
                     bs.this.append(

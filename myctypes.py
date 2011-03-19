@@ -20,17 +20,18 @@ class _FuncPtr(type_impl._Type):
     size = 0
     def __init__(self, (cdll, name)):
         type_impl._Type.__init__(self)
+        self.name = name
         self.func = cdll[name]
     def call(self, arg_types):
         def _(bs):
-            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str or x is Raw or x is type_impl.NoneType or isinstance(x, _FuncPtr)])
+            ints = len([x for x in arg_types if x is type_impl.Int or x is type_impl.Str or x is Raw or x is type_impl.NoneType or isinstance(x, _FuncPtr) or x is type_impl.Bool])
             floats = len([x for x in arg_types if x is type_impl.Float])
             floats_orig = floats
             pos = 0
             for arg_type in reversed(arg_types):
                 type = bs.flow.stack.pop()
                 assert arg_type is type, (type, arg_type)
-                if type is type_impl.Int:
+                if type is type_impl.Int or type is type_impl.Bool:
                     ints -= 1
                     bs.code += isa.mov(int_regs[ints], MemRef(registers.rsp, pos))
                     pos += 8

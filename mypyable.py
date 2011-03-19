@@ -18,7 +18,7 @@ class _PythonFunction(type_impl._Type):
     size = 0
     return_area = ctypes.create_string_buffer(1024)
     def low_handler(self, args):
-        #print args
+        print self, args
         res = self.handler(*[arg.to_python(data) for arg, data in args])
         # TODO return_area
         assert res.size == 0
