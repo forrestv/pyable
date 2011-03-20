@@ -610,6 +610,15 @@ class property(object):
         self.fdel = fdel
         return self
 
+class complex(object):
+    __slots__ = {
+        "real": "const",
+        "imag": "const",
+    }
+    def __init__(real, imag):
+        self.real = real
+        self.imag = imag
+
 r = module("__main__")
 sys.modules["__main__"] = r
 r.__doc__ = None
