@@ -3,3 +3,16 @@ USAGE
 python main.py [--debug] <python file>
 
 Test files are included in test/
+
+
+EXAMPLE
+
+forrest@forrest-desktop:~/repos/pyable$ python main.py bench/pystone.py 
+<debugging output omitted>
+Pystone(1.1) time for 3000000 passes = 5.82
+This machine benchmarks at 515463.917526 pystones/second
+
+forrest@forrest-desktop:~/repos/pyable$ python bench/pystone.py 
+Pystone(1.1) time for 3000000 passes = 24.56
+This machine benchmarks at 122149.837134 pystones/second
+
